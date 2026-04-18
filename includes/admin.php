@@ -20,8 +20,9 @@ function sb_enqueue_admin_assets($hook) {
     wp_enqueue_style('sb-admin', plugin_dir_url(dirname(__FILE__)) . 'assets/admin.css', [], '0.1.0');
     wp_enqueue_script('sb-admin', plugin_dir_url(dirname(__FILE__)) . 'assets/admin.js', [], '0.1.0', true);
     wp_localize_script('sb-admin', 'siteBackup', [
-        'nonce'   => wp_create_nonce('sb_export'),
-        'ajaxUrl' => admin_url('admin-ajax.php'),
+        'nonce'       => wp_create_nonce('sb_export'),
+        'importNonce' => wp_create_nonce('sb_import'),
+        'ajaxUrl'     => admin_url('admin-ajax.php'),
     ]);
 }
 
@@ -71,7 +72,47 @@ function sb_render_admin_page() {
 
         <div class="sb-tab-content" id="sb-tab-import" style="display:none;">
             <h2>Posts importieren</h2>
-            <p>Import-Funktion folgt in Milestone 8.</p>
+            <form id="sb-import-form" enctype="multipart/form-data">
+                <table class="form-table">
+                    <tr>
+                        <th><label for="sb-source-type">Quell-Post-Type</label></th>
+                        <td>
+                            <select name="source_type" id="sb-source-type">
+                                <?php foreach ($post_types as $pt): ?>
+                                    <option value="<?= esc_attr($pt->name) ?>"><?= esc_html($pt->label) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><label for="sb-target-type">Ziel-Post-Type</label></th>
+                        <td>
+                            <select name="target_type" id="sb-target-type">
+                                <?php foreach ($post_types as $pt): ?>
+                                    <option value="<?= esc_attr($pt->name) ?>"><?= esc_html($pt->label) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><label for="sb-collision">Bei vorhandenem Post</label></th>
+                        <td>
+                            <select name="collision" id="sb-collision">
+                                <option value="skip">Überspringen wenn identisch</option>
+                                <option value="override">Überschreiben</option>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><label for="sb-zip">Export-ZIP</label></th>
+                        <td><input type="file" name="sb_zip" id="sb-zip" accept=".zip"></td>
+                    </tr>
+                </table>
+                <p class="submit">
+                    <button type="submit" class="button button-primary">Importieren</button>
+                </p>
+            </form>
+            <div id="sb-import-result"></div>
         </div>
     </div>
     <?php

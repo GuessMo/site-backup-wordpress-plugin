@@ -40,4 +40,43 @@ document.addEventListener('DOMContentLoaded', function () {
                 result.innerHTML = '<p class="sb-error">Netzwerkfehler beim Export.</p>';
             });
     });
+
+    // Import-Form
+    const importForm = document.getElementById('sb-import-form');
+    if (importForm) {
+        importForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+            const result = document.getElementById('sb-import-result');
+            result.innerHTML = '<p>Import läuft…</p>';
+
+            const data = new FormData(importForm);
+            data.append('action', 'sb_import');
+            data.append('nonce', siteBackup.importNonce);
+
+            fetch(siteBackup.ajaxUrl, { method: 'POST', body: data })
+                .then(r => r.json())
+                .then(function (res) {
+                    if (!res.success) {
+                        result.innerHTML = '<p class="sb-error">Fehler: ' + (res.data?.message || 'Unbekannter Fehler') + '</p>';
+                        return;
+                    }
+                    const d = res.data;
+                    const summary = '<p class="sb-success"><strong>Erstellt: ' + d.created.length +
+                        ' | Aktualisiert: ' + d.updated.length +
+                        ' | Übersprungen: ' + d.skipped.length + '</strong></p>';
+                    const makeList = (label, items) => items.length
+                        ? '<details><summary>' + label + ' (' + items.length + ')</summary><ul>' +
+                          items.map(t => '<li>' + t + '</li>').join('') + '</ul></details>'
+                        : '';
+                    result.innerHTML = summary
+                        + makeList('Erstellt', d.created)
+                        + makeList('Aktualisiert', d.updated)
+                        + makeList('Übersprungen', d.skipped)
+                        + (d.errors?.length ? makeList('Fehler', d.errors) : '');
+                })
+                .catch(function () {
+                    result.innerHTML = '<p class="sb-error">Netzwerkfehler beim Import.</p>';
+                });
+        });
+    }
 });
