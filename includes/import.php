@@ -25,8 +25,12 @@ function sb_read_manifest(string $extract_dir): array|WP_Error {
     }
     $json = file_get_contents($manifest_path);
     $data = json_decode($json, true);
-    if (!is_array($data) || !isset($data['posts'], $data['post_type'], $data['count'])) {
+    if (!is_array($data) || !isset($data['posts'], $data['count'])) {
         return new WP_Error('invalid_manifest', 'Ungültiges manifest.json.');
+    }
+    // Compat: ältere Exporte hatten 'post_type' (Singular), neuere 'post_types' (Array)
+    if (!isset($data['post_types']) && isset($data['post_type'])) {
+        $data['post_types'] = [$data['post_type']];
     }
     return $data;
 }
