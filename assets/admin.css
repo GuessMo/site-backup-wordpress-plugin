@@ -122,3 +122,10 @@
     border-radius: 0 4px 4px 0;
     font-size: 0.9rem;
 }
+
+tr.sb-cpt-missing td {
+    background: #fff8e1;
+}
+select.sb-cpt-missing {
+    border-color: #d63638;
+}

@@ -179,10 +179,68 @@ document.addEventListener('DOMContentLoaded', function () {
                         + makeList('Erstellt', d.created)
                         + makeList('Aktualisiert', d.updated)
                         + makeList('Übersprungen', d.skipped)
+                        + makeList('Übersprungen (Mapping)', d.skipped_mapped || [])
+                        + makeList('Übersprungen (CPT fehlt)', d.skipped_no_cpt || [])
                         + (d.errors?.length ? makeList('Fehler', d.errors) : '');
                 })
                 .catch(function () {
                     result.innerHTML = '<p class="sb-error">Netzwerkfehler beim Import.</p>';
+                });
+        });
+    }
+
+    // ── CPT-MAPPING (Import) ──────────────────────────────────────────────────────
+    const zipInput      = document.querySelector('#sb-tab-import input[type="file"][name="sb_zip"]');
+    const cptMappingDiv = document.getElementById('sb-cpt-mapping');
+    const cptMapTable   = document.getElementById('sb-cpt-map-table');
+
+    if (zipInput && cptMappingDiv && cptMapTable) {
+        zipInput.addEventListener('change', function () {
+            if (!this.files.length) {
+                cptMappingDiv.style.display = 'none';
+                return;
+            }
+
+            const data = new FormData();
+            data.append('action', 'sb_peek_manifest');
+            data.append('nonce', siteBackup.peekNonce);
+            data.append('sb_zip', this.files[0]);
+
+            cptMappingDiv.style.display = 'none';
+            cptMapTable.querySelector('tbody').innerHTML = '<tr><td colspan="2">Lese ZIP…</td></tr>';
+
+            fetch(siteBackup.ajaxUrl, { method: 'POST', body: data })
+                .then(r => r.json())
+                .then(function (res) {
+                    if (!res.success || !res.data.post_types || !res.data.post_types.length) {
+                        return;
+                    }
+                    const available = (siteBackup.availableCpts || []);
+                    const availableNames = available.map(c => c.name);
+
+                    const rows = res.data.post_types.map(function (srcType) {
+                        const exists = availableNames.includes(srcType);
+                        const options = available.map(c =>
+                            '<option value="' + c.name + '"' + (c.name === srcType ? ' selected' : '') + '>'
+                            + c.label + ' (' + c.name + ')'
+                            + '</option>'
+                        ).join('');
+                        return '<tr' + (!exists ? ' class="sb-cpt-missing"' : '') + '>'
+                            + '<td><code>' + srcType + '</code>'
+                            + (!exists ? ' <span style="color:#d63638;">&#9888; nicht gefunden</span>' : '')
+                            + '</td>'
+                            + '<td><select name="cpt_map[' + srcType + ']" class="' + (!exists ? 'sb-cpt-missing' : '') + '">'
+                            + options
+                            + '<option value="skip">— Überspringen —</option>'
+                            + '</select></td>'
+                            + '</tr>';
+                    }).join('');
+
+                    cptMapTable.querySelector('tbody').innerHTML = rows;
+                    cptMappingDiv.style.display = 'block';
+                })
+                .catch(function () {
+                    // kein Peek möglich → still ignorieren, Import läuft ohne Mapping
                 });
         });
     }

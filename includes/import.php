@@ -49,6 +49,10 @@ function sb_import_single_post(array $post_data, string $target_type, string $co
         sb_replace_domain_in_post($post_data, $old_domain, $new_domain);
     }
 
+    if (!post_type_exists($target_type)) {
+        return ['status' => 'skipped_no_cpt', 'title' => $post_data['post_title'], 'cpt' => $target_type];
+    }
+
     $existing_id = sb_find_existing_post($post_data, $target_type);
 
     if ($existing_id && $collision === 'skip') {
@@ -160,6 +164,46 @@ function sb_replace_domain_in_post(array &$post_data, string $old_domain, string
     }
 }
 
+add_action('wp_ajax_sb_peek_manifest', 'sb_ajax_peek_manifest');
+function sb_ajax_peek_manifest(): void {
+    check_ajax_referer('sb_peek_manifest', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Nicht autorisiert.'], 403);
+    }
+
+    if (empty($_FILES['sb_zip']['tmp_name'])) {
+        wp_send_json_error(['message' => 'Keine ZIP-Datei.']);
+    }
+
+    $extract_dir = sb_extract_zip($_FILES['sb_zip']['tmp_name']);
+    if (is_wp_error($extract_dir)) {
+        wp_send_json_error(['message' => $extract_dir->get_error_message()]);
+    }
+
+    $manifest_path = trailingslashit($extract_dir) . 'manifest.json';
+    if (!file_exists($manifest_path)) {
+        wp_send_json_error(['message' => 'Kein manifest.json in der ZIP.']);
+    }
+
+    $manifest = json_decode(file_get_contents($manifest_path), true);
+
+    // Temp aufräumen
+    array_map('unlink', (array) glob($extract_dir . '/*.*'));
+    @rmdir($extract_dir);
+
+    if (!is_array($manifest)) {
+        wp_send_json_error(['message' => 'Ungültiges manifest.json.']);
+    }
+
+    // post_types aus manifest (neues Feld) oder aus Posts ableiten
+    $post_types = $manifest['post_types'] ?? [];
+    if (empty($post_types) && !empty($manifest['posts'])) {
+        $post_types = array_values(array_unique(array_column($manifest['posts'], 'post_type')));
+    }
+
+    wp_send_json_success(['post_types' => $post_types]);
+}
+
 add_action('wp_ajax_sb_import', 'sb_ajax_import');
 function sb_ajax_import() {
     check_ajax_referer('sb_import', 'nonce');
@@ -205,15 +249,31 @@ function sb_ajax_import() {
                    ? $_POST['collision'] : 'skip';
     $media_dir   = trailingslashit($extract_dir);
 
-    $created = $updated = $skipped = $errors = [];
+    $cpt_map = [];
+    if (!empty($_POST['cpt_map']) && is_array($_POST['cpt_map'])) {
+        foreach ($_POST['cpt_map'] as $src => $dst) {
+            $cpt_map[sanitize_key($src)] = sanitize_key($dst);
+        }
+    }
+
+    $created = $updated = $skipped = $skipped_mapped = $skipped_no_cpt = $errors = [];
 
     foreach ($manifest['posts'] as $post_data) {
-        $result = sb_import_single_post($post_data, $target_type, $collision, $media_dir, $old_domain, $new_domain);
+        $src_type    = $post_data['post_type'] ?? $target_type;
+        $mapped_type = $cpt_map[$src_type] ?? $src_type;
+
+        if ($mapped_type === 'skip') {
+            $skipped_mapped[] = $post_data['post_title'] ?? '?';
+            continue;
+        }
+
+        $result = sb_import_single_post($post_data, $mapped_type, $collision, $media_dir, $old_domain, $new_domain);
         switch ($result['status']) {
-            case 'created':  $created[]  = $result['title']; break;
-            case 'updated':  $updated[]  = $result['title']; break;
-            case 'skipped':  $skipped[]  = $result['title']; break;
-            case 'error':    $errors[]   = $result['title'] . ': ' . ($result['error'] ?? ''); break;
+            case 'created':        $created[]        = $result['title']; break;
+            case 'updated':        $updated[]        = $result['title']; break;
+            case 'skipped':        $skipped[]        = $result['title']; break;
+            case 'skipped_no_cpt': $skipped_no_cpt[] = ($result['title'] ?? '?') . ' (' . ($result['cpt'] ?? '') . ')'; break;
+            case 'error':          $errors[]         = ($result['title'] ?? '?') . ': ' . ($result['error'] ?? ''); break;
         }
     }
 
@@ -223,9 +283,11 @@ function sb_ajax_import() {
     @rmdir($extract_dir);
 
     wp_send_json_success([
-        'created' => $created,
-        'updated' => $updated,
-        'skipped' => $skipped,
-        'errors'  => $errors,
+        'created'        => $created,
+        'updated'        => $updated,
+        'skipped'        => $skipped,
+        'skipped_mapped' => $skipped_mapped,
+        'skipped_no_cpt' => $skipped_no_cpt,
+        'errors'         => $errors,
     ]);
 }

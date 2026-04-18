@@ -29,6 +29,19 @@ function sb_enqueue_admin_assets($hook) {
         'exportSettingsNonce' => wp_create_nonce('sb_export_settings'),
         'importSettingsNonce' => wp_create_nonce('sb_import_settings'),
         'ajaxUrl'             => admin_url('admin-ajax.php'),
+        'peekNonce'    => wp_create_nonce('sb_peek_manifest'),
+        'availableCpts' => array_values(array_map(
+            fn($pt) => ['name' => $pt->name, 'label' => $pt->label],
+            array_filter(
+                get_post_types(['show_ui' => true], 'objects'),
+                fn($pt) => !in_array($pt->name, [
+                    'attachment', 'revision', 'nav_menu_item', 'custom_css',
+                    'customize_changeset', 'oembed_cache', 'user_request',
+                    'wp_block', 'wp_template', 'wp_template_part',
+                    'wp_global_styles', 'wp_navigation',
+                ], true)
+            )
+        )),
     ]);
 }
 
@@ -99,6 +112,14 @@ function sb_render_admin_page() {
                         <td><input type="file" name="sb_zip" id="sb-zip" accept=".zip"></td>
                     </tr>
                 </table>
+                <div id="sb-cpt-mapping" style="display:none; margin: 12px 0;">
+                    <h3>CPT-Zuordnung</h3>
+                    <p class="description">Ordne jeden Quell-Post-Type dem gewünschten Ziel-Post-Type zu.</p>
+                    <table class="widefat" id="sb-cpt-map-table">
+                        <thead><tr><th>Quell-CPT (aus ZIP)</th><th>Ziel-CPT (diese Instanz)</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
                 <p class="submit">
                     <button type="submit" class="button button-primary">Importieren</button>
                 </p>
