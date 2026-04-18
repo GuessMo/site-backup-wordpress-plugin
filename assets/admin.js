@@ -9,106 +9,144 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
-    // Post-Auswahl
-    const postTypeSelect = document.getElementById('sb-post-type');
-    const postListWrap = document.getElementById('sb-post-list-wrap');
-    const postList = document.getElementById('sb-post-list');
-    const toggleBtn = document.getElementById('sb-toggle-all');
-    const countLabel = document.getElementById('sb-selected-count');
-    const exportBtn = document.getElementById('sb-export-btn');
+    // ── EXPORT ──────────────────────────────────────────────
+    const postGroups   = document.getElementById('sb-post-groups');
+    const toggleAllBtn = document.getElementById('sb-toggle-all');
+    const countLabel   = document.getElementById('sb-selected-count');
+    const loadingLabel = document.getElementById('sb-loading-posts');
+    const exportBtn    = document.getElementById('sb-export-btn');
+    const exportForm   = document.getElementById('sb-export-form');
+    const exportResult = document.getElementById('sb-export-result');
 
     function updateCount() {
-        const checked = postList.querySelectorAll('input[type="checkbox"]:checked').length;
+        if (!postGroups) return;
+        const checked = postGroups.querySelectorAll('input[name="post_ids[]"]:checked').length;
+        const total   = postGroups.querySelectorAll('input[name="post_ids[]"]').length;
         countLabel.textContent = checked + ' ausgewählt';
-        exportBtn.disabled = checked === 0;
-        const all = postList.querySelectorAll('input[type="checkbox"]').length;
-        toggleBtn.textContent = checked === all ? 'Alle abwählen' : 'Alle auswählen';
+        if (exportBtn) exportBtn.disabled = checked === 0;
+        if (toggleAllBtn) toggleAllBtn.textContent = (checked === total && total > 0) ? 'Alle abwählen' : 'Alle auswählen';
     }
 
-    function loadPosts(postType) {
-        postListWrap.style.display = 'none';
-        postList.innerHTML = '<p>Lade Posts…</p>';
-        exportBtn.disabled = true;
+    function updateGroupToggle(groupEl) {
+        const groupCb  = groupEl.querySelector('.sb-group-all');
+        const itemCbs  = groupEl.querySelectorAll('input[name="post_ids[]"]');
+        const checked  = groupEl.querySelectorAll('input[name="post_ids[]"]:checked').length;
+        if (groupCb) groupCb.indeterminate = checked > 0 && checked < itemCbs.length;
+        if (groupCb) groupCb.checked = checked === itemCbs.length && itemCbs.length > 0;
+    }
+
+    function loadAllPosts() {
+        if (!postGroups) return;
+        if (loadingLabel) loadingLabel.style.display = 'inline';
+        postGroups.innerHTML = '';
+        if (exportBtn) exportBtn.disabled = true;
 
         const data = new FormData();
-        data.append('action', 'sb_get_posts');
-        data.append('nonce', siteBackup.postsNonce);
-        data.append('post_type', postType);
-
-        fetch(siteBackup.ajaxUrl, { method: 'POST', body: data })
-            .then(r => r.json())
-            .then(function(res) {
-                if (!res.success || !res.data.length) {
-                    postList.innerHTML = '<p>Keine Posts gefunden.</p>';
-                    postListWrap.style.display = 'block';
-                    return;
-                }
-                postList.innerHTML = res.data.map(function(p) {
-                    return '<label class="sb-post-item">'
-                        + '<input type="checkbox" name="post_ids[]" value="' + p.id + '">'
-                        + ' <span class="sb-post-title">' + p.title + '</span>'
-                        + ' <span class="sb-post-meta">' + p.date + ' · ' + p.status + '</span>'
-                        + '</label>';
-                }).join('');
-                postListWrap.style.display = 'block';
-                postList.querySelectorAll('input[type="checkbox"]').forEach(function(cb) {
-                    cb.addEventListener('change', updateCount);
-                });
-                updateCount();
-            })
-            .catch(function() {
-                postList.innerHTML = '<p class="sb-error">Fehler beim Laden.</p>';
-                postListWrap.style.display = 'block';
-            });
-    }
-
-    if (postTypeSelect) {
-        postTypeSelect.addEventListener('change', function() {
-            loadPosts(this.value);
-        });
-        loadPosts(postTypeSelect.value);
-    }
-
-    if (toggleBtn) {
-        toggleBtn.addEventListener('click', function() {
-            const checkboxes = postList.querySelectorAll('input[type="checkbox"]');
-            const allChecked = [...checkboxes].every(cb => cb.checked);
-            checkboxes.forEach(cb => { cb.checked = !allChecked; });
-            updateCount();
-        });
-    }
-
-    // Export-Form
-    const form = document.getElementById('sb-export-form');
-    if (!form) return;
-
-    form.addEventListener('submit', function (e) {
-        e.preventDefault();
-        const result = document.getElementById('sb-export-result');
-        result.innerHTML = '<p>Export wird erstellt…</p>';
-
-        const data = new FormData(form);
-        data.append('action', 'sb_export');
-        data.append('nonce', siteBackup.nonce);
+        data.append('action', 'sb_get_all_posts');
+        data.append('nonce', siteBackup.allPostsNonce);
 
         fetch(siteBackup.ajaxUrl, { method: 'POST', body: data })
             .then(r => r.json())
             .then(function (res) {
-                if (!res.success) {
-                    result.innerHTML = '<p class="sb-error">Fehler: ' + (res.data?.message || 'Unbekannter Fehler') + '</p>';
+                if (loadingLabel) loadingLabel.style.display = 'none';
+                if (!res.success || !Object.keys(res.data).length) {
+                    postGroups.innerHTML = '<p>Keine Posts gefunden.</p>';
                     return;
                 }
-                const d = res.data;
-                const titles = d.titles.map(t => '<li>' + t + '</li>').join('');
-                result.innerHTML =
-                    '<p class="sb-success"><strong>' + d.count + ' Posts exportiert.</strong></p>' +
-                    '<ul class="sb-export-list">' + titles + '</ul>' +
-                    '<p><a href="' + d.download_url + '" class="button button-secondary" download>ZIP herunterladen</a></p>';
+                Object.entries(res.data).forEach(function ([type, group]) {
+                    const details = document.createElement('details');
+                    details.className = 'sb-pt-group';
+                    details.open = true;
+
+                    const count = group.posts.length;
+                    details.innerHTML =
+                        '<summary class="sb-pt-summary">'
+                        + '<label class="sb-group-label" onclick="event.stopPropagation()">'
+                        + '<input type="checkbox" class="sb-group-all" data-group="' + type + '"> '
+                        + '<strong>' + group.label + '</strong>'
+                        + '</label>'
+                        + '<span class="sb-pt-count">' + count + ' Posts</span>'
+                        + '</summary>'
+                        + '<div class="sb-post-list">'
+                        + group.posts.map(function (p) {
+                            return '<label class="sb-post-item">'
+                                + '<input type="checkbox" name="post_ids[]" value="' + p.id + '">'
+                                + ' <span class="sb-post-title">' + p.title + '</span>'
+                                + ' <span class="sb-post-meta">' + p.date + ' · ' + p.status + '</span>'
+                                + '</label>';
+                        }).join('')
+                        + '</div>';
+
+                    // Gruppen-Checkbox: alle in Gruppe toggeln
+                    const groupCb = details.querySelector('.sb-group-all');
+                    groupCb.addEventListener('change', function () {
+                        details.querySelectorAll('input[name="post_ids[]"]').forEach(cb => {
+                            cb.checked = groupCb.checked;
+                        });
+                        updateCount();
+                    });
+
+                    // Einzel-Checkbox → Gruppen-Toggle + Gesamt-Zähler
+                    details.querySelectorAll('input[name="post_ids[]"]').forEach(function (cb) {
+                        cb.addEventListener('change', function () {
+                            updateGroupToggle(details);
+                            updateCount();
+                        });
+                    });
+
+                    postGroups.appendChild(details);
+                });
+
+                updateCount();
             })
             .catch(function () {
-                result.innerHTML = '<p class="sb-error">Netzwerkfehler beim Export.</p>';
+                if (loadingLabel) loadingLabel.style.display = 'none';
+                postGroups.innerHTML = '<p class="sb-error">Fehler beim Laden der Posts.</p>';
             });
-    });
+    }
+
+    // Globaler Toggle
+    if (toggleAllBtn) {
+        toggleAllBtn.addEventListener('click', function () {
+            const allCbs = postGroups.querySelectorAll('input[name="post_ids[]"]');
+            const anyUnchecked = [...allCbs].some(cb => !cb.checked);
+            allCbs.forEach(cb => { cb.checked = anyUnchecked; });
+            postGroups.querySelectorAll('.sb-pt-group').forEach(updateGroupToggle);
+            updateCount();
+        });
+    }
+
+    // Export-Submit
+    if (exportForm) {
+        exportForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+            exportResult.innerHTML = '<p>Export läuft…</p>';
+
+            const data = new FormData();
+            data.append('action', 'sb_export');
+            data.append('nonce', siteBackup.nonce);
+            postGroups.querySelectorAll('input[name="post_ids[]"]:checked').forEach(function (cb) {
+                data.append('post_ids[]', cb.value);
+            });
+
+            fetch(siteBackup.ajaxUrl, { method: 'POST', body: data })
+                .then(r => r.json())
+                .then(function (res) {
+                    if (!res.success) {
+                        exportResult.innerHTML = '<p class="sb-error">Fehler: ' + (res.data?.message || 'Unbekannter Fehler') + '</p>';
+                        return;
+                    }
+                    exportResult.innerHTML = '<p class="sb-success">Export erfolgreich! '
+                        + '<a href="' + res.data.url + '" download>ZIP herunterladen</a></p>';
+                })
+                .catch(function () {
+                    exportResult.innerHTML = '<p class="sb-error">Netzwerkfehler beim Export.</p>';
+                });
+        });
+    }
+
+    // Init
+    loadAllPosts();
 
     // Import-Form
     const importForm = document.getElementById('sb-import-form');

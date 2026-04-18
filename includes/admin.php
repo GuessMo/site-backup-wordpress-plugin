@@ -20,10 +20,11 @@ function sb_enqueue_admin_assets($hook) {
     wp_enqueue_style('sb-admin', plugin_dir_url(dirname(__FILE__)) . 'assets/admin.css', [], '0.1.0');
     wp_enqueue_script('sb-admin', plugin_dir_url(dirname(__FILE__)) . 'assets/admin.js', [], '0.1.0', true);
     wp_localize_script('sb-admin', 'siteBackup', [
-        'nonce'       => wp_create_nonce('sb_export'),
-        'importNonce' => wp_create_nonce('sb_import'),
-        'postsNonce'  => wp_create_nonce('sb_get_posts'),
-        'ajaxUrl'     => admin_url('admin-ajax.php'),
+        'nonce'         => wp_create_nonce('sb_export'),
+        'importNonce'   => wp_create_nonce('sb_import'),
+        'postsNonce'    => wp_create_nonce('sb_get_posts'),
+        'allPostsNonce' => wp_create_nonce('sb_get_all_posts'),
+        'ajaxUrl'       => admin_url('admin-ajax.php'),
     ]);
 }
 
@@ -41,27 +42,12 @@ function sb_render_admin_page() {
         <div class="sb-tab-content" id="sb-tab-export">
             <h2>Posts exportieren</h2>
             <form id="sb-export-form">
-                <table class="form-table">
-                    <tr>
-                        <th><label for="sb-post-type">Post-Type</label></th>
-                        <td>
-                            <select name="post_type" id="sb-post-type">
-                                <?php foreach ($post_types as $pt): ?>
-                                    <option value="<?= esc_attr($pt->name) ?>"><?= esc_html($pt->label) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </td>
-                    </tr>
-                </table>
-
-                <div id="sb-post-list-wrap" style="display:none;">
-                    <div class="sb-post-list-toolbar">
-                        <button type="button" id="sb-toggle-all" class="button">Alle auswählen</button>
-                        <span id="sb-selected-count">0 ausgewählt</span>
-                    </div>
-                    <div id="sb-post-list" class="sb-post-list"></div>
+                <div class="sb-post-list-toolbar">
+                    <button type="button" id="sb-toggle-all" class="button">Alle auswählen</button>
+                    <span id="sb-selected-count">0 ausgewählt</span>
+                    <span id="sb-loading-posts" style="display:none;">Lade Posts…</span>
                 </div>
-
+                <div id="sb-post-groups"></div>
                 <p class="submit">
                     <button type="submit" id="sb-export-btn" class="button button-primary" disabled>Exportieren</button>
                 </p>
