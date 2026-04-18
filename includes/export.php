@@ -1,14 +1,16 @@
 <?php
 if (!defined('ABSPATH')) exit;
 
-function sb_get_posts_for_export(string $post_type, int $year = 0): array {
+function sb_get_posts_for_export(string $post_type, int $year = 0, array $post_ids = []): array {
     $args = [
         'post_type'      => $post_type,
         'post_status'    => 'any',
         'posts_per_page' => -1,
         'nopaging'       => true,
     ];
-    if ($year > 0) {
+    if (!empty($post_ids)) {
+        $args['post__in'] = $post_ids;
+    } elseif ($year > 0) {
         $args['date_query'] = [[
             'after'     => ['year' => $year, 'month' => 1, 'day' => 1],
             'inclusive' => true,
@@ -16,6 +18,38 @@ function sb_get_posts_for_export(string $post_type, int $year = 0): array {
     }
     $query = new WP_Query($args);
     return $query->posts;
+}
+
+add_action('wp_ajax_sb_get_posts', 'sb_ajax_get_posts');
+function sb_ajax_get_posts() {
+    check_ajax_referer('sb_get_posts', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Nicht autorisiert.'], 403);
+    }
+
+    $post_type = sanitize_key($_POST['post_type'] ?? 'post');
+
+    $query = new WP_Query([
+        'post_type'      => $post_type,
+        'post_status'    => 'any',
+        'posts_per_page' => -1,
+        'orderby'        => 'title',
+        'order'          => 'ASC',
+        'fields'         => 'ids',
+    ]);
+
+    $posts = [];
+    foreach ($query->posts as $id) {
+        $post = get_post($id);
+        $posts[] = [
+            'id'     => $id,
+            'title'  => get_the_title($id) ?: '(kein Titel)',
+            'date'   => get_the_date('d.m.Y', $id),
+            'status' => $post->post_status,
+        ];
+    }
+
+    wp_send_json_success($posts);
 }
 
 function sb_build_manifest(array $posts, string $post_type): array {
@@ -67,7 +101,13 @@ function sb_ajax_export() {
     $post_type = sanitize_key($_POST['post_type'] ?? 'post');
     $year      = absint($_POST['year'] ?? 0);
 
-    $posts    = sb_get_posts_for_export($post_type, $year);
+    $post_ids = [];
+    if (!empty($_POST['post_ids']) && is_array($_POST['post_ids'])) {
+        $post_ids = array_map('absint', $_POST['post_ids']);
+        $post_ids = array_filter($post_ids);
+    }
+
+    $posts    = sb_get_posts_for_export($post_type, $year, $post_ids);
     $manifest = sb_build_manifest($posts, $post_type);
     $zip_path = sb_create_export_zip($manifest, $posts);
 

@@ -22,6 +22,7 @@ function sb_enqueue_admin_assets($hook) {
     wp_localize_script('sb-admin', 'siteBackup', [
         'nonce'       => wp_create_nonce('sb_export'),
         'importNonce' => wp_create_nonce('sb_import'),
+        'postsNonce'  => wp_create_nonce('sb_get_posts'),
         'ajaxUrl'     => admin_url('admin-ajax.php'),
     ]);
 }
@@ -42,7 +43,7 @@ function sb_render_admin_page() {
             <form id="sb-export-form">
                 <table class="form-table">
                     <tr>
-                        <th><label for="sb-post-type">Post Type</label></th>
+                        <th><label for="sb-post-type">Post-Type</label></th>
                         <td>
                             <select name="post_type" id="sb-post-type">
                                 <?php foreach ($post_types as $pt): ?>
@@ -51,20 +52,18 @@ function sb_render_admin_page() {
                             </select>
                         </td>
                     </tr>
-                    <tr>
-                        <th><label for="sb-year">Ab Jahr</label></th>
-                        <td>
-                            <select name="year" id="sb-year">
-                                <option value="0">Alle Jahre</option>
-                                <?php for ($y = $current_year; $y >= 2010; $y--): ?>
-                                    <option value="<?= $y ?>"><?= $y ?></option>
-                                <?php endfor; ?>
-                            </select>
-                        </td>
-                    </tr>
                 </table>
+
+                <div id="sb-post-list-wrap" style="display:none;">
+                    <div class="sb-post-list-toolbar">
+                        <button type="button" id="sb-toggle-all" class="button">Alle auswählen</button>
+                        <span id="sb-selected-count">0 ausgewählt</span>
+                    </div>
+                    <div id="sb-post-list" class="sb-post-list"></div>
+                </div>
+
                 <p class="submit">
-                    <button type="submit" class="button button-primary">Exportieren</button>
+                    <button type="submit" id="sb-export-btn" class="button button-primary" disabled>Exportieren</button>
                 </p>
             </form>
             <div id="sb-export-result"></div>
