@@ -332,6 +332,16 @@ document.addEventListener('DOMContentLoaded', function () {
             selectAllSettingsBtn.textContent = anyUnchecked ? 'Alle abwählen' : 'Alle auswählen';
         });
     }
+    const selectAllSettingsBtn = document.getElementById('sb-select-all-settings');
+
+    if (selectAllSettingsBtn) {
+        selectAllSettingsBtn.addEventListener('click', function () {
+            const allCbs = document.querySelectorAll('input[name="sb_setting_keys[]"]');
+            const anyUnchecked = [...allCbs].some(cb => !cb.checked);
+            allCbs.forEach(cb => { cb.checked = anyUnchecked; });
+            selectAllSettingsBtn.textContent = anyUnchecked ? 'Alle abwählen' : 'Alle auswählen';
+        });
+    }
 
     if (exportSettingsBtn) {
         exportSettingsBtn.addEventListener('click', function () {
