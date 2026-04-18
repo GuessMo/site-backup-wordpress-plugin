@@ -191,6 +191,7 @@ function sb_render_admin_page() {
                 </fieldset>
             <?php endforeach; ?>
             <p class="submit">
+                <button type="button" id="sb-select-all-settings" class="button">Alle auswählen</button>
                 <button type="button" id="sb-export-settings-btn" class="button button-primary">Ausgewählte exportieren</button>
             </p>
             <div id="sb-export-settings-result"></div>

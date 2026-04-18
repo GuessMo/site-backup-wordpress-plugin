@@ -322,6 +322,16 @@ document.addEventListener('DOMContentLoaded', function () {
     const importSettingsBtn    = document.getElementById('sb-import-settings-btn');
     const importSettingsResult = document.getElementById('sb-import-settings-result');
     const settingsZipInput     = document.getElementById('sb-settings-zip');
+    const selectAllSettingsBtn = document.getElementById('sb-select-all-settings');
+
+    if (selectAllSettingsBtn) {
+        selectAllSettingsBtn.addEventListener('click', function () {
+            const allCbs = document.querySelectorAll('input[name="sb_setting_keys[]"]');
+            const anyUnchecked = [...allCbs].some(cb => !cb.checked);
+            allCbs.forEach(cb => { cb.checked = anyUnchecked; });
+            selectAllSettingsBtn.textContent = anyUnchecked ? 'Alle abwählen' : 'Alle auswählen';
+        });
+    }
 
     if (exportSettingsBtn) {
         exportSettingsBtn.addEventListener('click', function () {
