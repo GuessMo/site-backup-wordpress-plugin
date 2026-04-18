@@ -2,7 +2,7 @@
 /**
  * Plugin Name: TSV Site Backup
  * Description: Export and import WordPress posts (including media) between instances with post type mapping.
- * Version: 0.5.0
+ * Version: 0.6.0
  * Update URI: false
  * Author: Hersteller.io
  * Text Domain: tsv-site-backup
@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-define( 'POST_MIGRATOR_VERSION', '0.5.0' );
+define( 'POST_MIGRATOR_VERSION', '0.6.0' );
 define( 'POST_MIGRATOR_DIR', plugin_dir_path( __FILE__ ) );
 define( 'POST_MIGRATOR_URL', plugin_dir_url( __FILE__ ) );
 
