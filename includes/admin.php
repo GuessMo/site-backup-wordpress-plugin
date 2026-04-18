@@ -79,26 +79,6 @@ function sb_render_admin_page() {
             <form id="sb-import-form" enctype="multipart/form-data">
                 <table class="form-table">
                     <tr>
-                        <th><label for="sb-source-type">Quell-Post-Type</label></th>
-                        <td>
-                            <select name="source_type" id="sb-source-type">
-                                <?php foreach ($post_types as $pt): ?>
-                                    <option value="<?= esc_attr($pt->name) ?>"><?= esc_html($pt->label) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th><label for="sb-target-type">Ziel-Post-Type</label></th>
-                        <td>
-                            <select name="target_type" id="sb-target-type">
-                                <?php foreach ($post_types as $pt): ?>
-                                    <option value="<?= esc_attr($pt->name) ?>"><?= esc_html($pt->label) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </td>
-                    </tr>
-                    <tr>
                         <th><label for="sb-collision">Bei vorhandenem Post</label></th>
                         <td>
                             <select name="collision" id="sb-collision">
