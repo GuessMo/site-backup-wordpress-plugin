@@ -59,7 +59,16 @@ function sb_ajax_get_all_posts(): void {
         wp_send_json_error(['message' => 'Nicht autorisiert.'], 403);
     }
 
-    $post_types = get_post_types(['public' => true], 'objects');
+    $sb_cpt_blacklist = [
+        'attachment', 'revision', 'nav_menu_item', 'custom_css',
+        'customize_changeset', 'oembed_cache', 'user_request',
+        'wp_block', 'wp_template', 'wp_template_part',
+        'wp_global_styles', 'wp_navigation',
+    ];
+    $post_types = array_filter(
+        get_post_types(['show_ui' => true], 'objects'),
+        fn($pt) => !in_array($pt->name, $sb_cpt_blacklist, true)
+    );
     $result = [];
 
     foreach ($post_types as $type_obj) {

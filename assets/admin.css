@@ -113,3 +113,12 @@
     padding: 6px 12px 10px;
     border-top: 1px solid #eee;
 }
+
+.sb-warning {
+    background: #fff8e1;
+    border-left: 4px solid #ffc107;
+    padding: 10px 14px;
+    margin: 10px 0;
+    border-radius: 0 4px 4px 0;
+    font-size: 0.9rem;
+}

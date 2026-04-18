@@ -186,4 +186,75 @@ document.addEventListener('DOMContentLoaded', function () {
                 });
         });
     }
+
+    // ── USERS ────────────────────────────────────────────────────────────────────
+    const exportUsersBtn    = document.getElementById('sb-export-users-btn');
+    const exportUsersResult = document.getElementById('sb-export-users-result');
+    const usersRoleSelect   = document.getElementById('sb-users-role');
+    const importUsersBtn    = document.getElementById('sb-import-users-btn');
+    const importUsersResult = document.getElementById('sb-import-users-result');
+    const usersZipInput     = document.getElementById('sb-users-zip');
+
+    if (exportUsersBtn) {
+        exportUsersBtn.addEventListener('click', function () {
+            exportUsersResult.innerHTML = '<p>Exportiere Benutzer…</p>';
+            const data = new FormData();
+            data.append('action', 'sb_export_users');
+            data.append('nonce', siteBackup.exportUsersNonce);
+            data.append('role', usersRoleSelect ? usersRoleSelect.value : '');
+
+            fetch(siteBackup.ajaxUrl, { method: 'POST', body: data })
+                .then(r => r.json())
+                .then(function (res) {
+                    if (!res.success) {
+                        exportUsersResult.innerHTML = '<p class="sb-error">Fehler: ' + (res.data?.message || 'Unbekannter Fehler') + '</p>';
+                        return;
+                    }
+                    exportUsersResult.innerHTML = '<p class="sb-success">'
+                        + res.data.count + ' Benutzer exportiert. '
+                        + '<a href="' + res.data.url + '" download>ZIP herunterladen</a></p>';
+                })
+                .catch(function () {
+                    exportUsersResult.innerHTML = '<p class="sb-error">Netzwerkfehler.</p>';
+                });
+        });
+    }
+
+    if (importUsersBtn) {
+        importUsersBtn.addEventListener('click', function () {
+            if (!usersZipInput || !usersZipInput.files.length) {
+                importUsersResult.innerHTML = '<p class="sb-error">Bitte ZIP-Datei auswählen.</p>';
+                return;
+            }
+            importUsersResult.innerHTML = '<p>Importiere Benutzer…</p>';
+            const data = new FormData();
+            data.append('action', 'sb_import_users');
+            data.append('nonce', siteBackup.importUsersNonce);
+            data.append('sb_users_zip', usersZipInput.files[0]);
+
+            fetch(siteBackup.ajaxUrl, { method: 'POST', body: data })
+                .then(r => r.json())
+                .then(function (res) {
+                    if (!res.success) {
+                        importUsersResult.innerHTML = '<p class="sb-error">Fehler: ' + (res.data?.message || 'Unbekannter Fehler') + '</p>';
+                        return;
+                    }
+                    const d = res.data;
+                    let html = '<p class="sb-success"><strong>Erstellt: ' + d.created.length
+                        + ' | Aktualisiert: ' + d.updated.length + '</strong></p>';
+                    if (d.password_reset_hint) {
+                        html += '<div class="sb-warning">⚠️ Neu angelegte Benutzer haben ein Zufallspasswort. '
+                            + 'Bitte Passwort-Reset-Links versenden '
+                            + '(<a href="' + siteBackup.ajaxUrl.replace('admin-ajax.php', '') + 'users.php" target="_blank">Benutzerliste öffnen</a>).</div>';
+                    }
+                    if (d.created.length) html += '<details><summary>Erstellt (' + d.created.length + ')</summary><ul>' + d.created.map(n => '<li>' + n + '</li>').join('') + '</ul></details>';
+                    if (d.updated.length) html += '<details><summary>Aktualisiert (' + d.updated.length + ')</summary><ul>' + d.updated.map(n => '<li>' + n + '</li>').join('') + '</ul></details>';
+                    if (d.errors && d.errors.length) html += '<details><summary>Fehler (' + d.errors.length + ')</summary><ul>' + d.errors.map(n => '<li>' + n + '</li>').join('') + '</ul></details>';
+                    importUsersResult.innerHTML = html;
+                })
+                .catch(function () {
+                    importUsersResult.innerHTML = '<p class="sb-error">Netzwerkfehler.</p>';
+                });
+        });
+    }
 });

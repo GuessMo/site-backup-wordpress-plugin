@@ -20,3 +20,4 @@ require_once POST_MIGRATOR_DIR . 'includes/admin.php';
 require_once POST_MIGRATOR_DIR . 'includes/export.php';
 require_once POST_MIGRATOR_DIR . 'includes/import.php';
 require_once POST_MIGRATOR_DIR . 'includes/media.php';
+require_once POST_MIGRATOR_DIR . 'includes/users.php';

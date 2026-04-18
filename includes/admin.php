@@ -20,11 +20,13 @@ function sb_enqueue_admin_assets($hook) {
     wp_enqueue_style('sb-admin', plugin_dir_url(dirname(__FILE__)) . 'assets/admin.css', [], '0.1.0');
     wp_enqueue_script('sb-admin', plugin_dir_url(dirname(__FILE__)) . 'assets/admin.js', [], '0.1.0', true);
     wp_localize_script('sb-admin', 'siteBackup', [
-        'nonce'         => wp_create_nonce('sb_export'),
-        'importNonce'   => wp_create_nonce('sb_import'),
-        'postsNonce'    => wp_create_nonce('sb_get_posts'),
-        'allPostsNonce' => wp_create_nonce('sb_get_all_posts'),
-        'ajaxUrl'       => admin_url('admin-ajax.php'),
+        'nonce'            => wp_create_nonce('sb_export'),
+        'importNonce'      => wp_create_nonce('sb_import'),
+        'postsNonce'       => wp_create_nonce('sb_get_posts'),
+        'allPostsNonce'    => wp_create_nonce('sb_get_all_posts'),
+        'exportUsersNonce' => wp_create_nonce('sb_export_users'),
+        'importUsersNonce' => wp_create_nonce('sb_import_users'),
+        'ajaxUrl'          => admin_url('admin-ajax.php'),
     ]);
 }
 
@@ -37,6 +39,7 @@ function sb_render_admin_page() {
         <nav class="sb-tabs">
             <button class="sb-tab active" data-tab="export">Export</button>
             <button class="sb-tab" data-tab="import">Import</button>
+            <button class="sb-tab" data-tab="users">Benutzer</button>
         </nav>
 
         <div class="sb-tab-content" id="sb-tab-export">
@@ -98,6 +101,43 @@ function sb_render_admin_page() {
                 </p>
             </form>
             <div id="sb-import-result"></div>
+        </div>
+
+        <div class="sb-tab-content" id="sb-tab-users" style="display:none;">
+            <h2>Benutzer exportieren</h2>
+            <table class="form-table">
+                <tr>
+                    <th><label for="sb-users-role">Rolle filtern</label></th>
+                    <td>
+                        <select id="sb-users-role">
+                            <option value="">Alle Rollen</option>
+                            <option value="administrator">Administrator</option>
+                            <option value="editor">Editor</option>
+                            <option value="author">Autor</option>
+                            <option value="contributor">Mitarbeiter</option>
+                            <option value="subscriber">Abonnent</option>
+                        </select>
+                    </td>
+                </tr>
+            </table>
+            <p class="submit">
+                <button type="button" id="sb-export-users-btn" class="button button-primary">Benutzer exportieren</button>
+            </p>
+            <div id="sb-export-users-result"></div>
+
+            <hr>
+
+            <h2>Benutzer importieren</h2>
+            <table class="form-table">
+                <tr>
+                    <th><label for="sb-users-zip">Benutzer-ZIP</label></th>
+                    <td><input type="file" id="sb-users-zip" accept=".zip"></td>
+                </tr>
+            </table>
+            <p class="submit">
+                <button type="button" id="sb-import-users-btn" class="button button-primary">Importieren</button>
+            </p>
+            <div id="sb-import-users-result"></div>
         </div>
     </div>
     <?php
