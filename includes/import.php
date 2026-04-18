@@ -44,7 +44,11 @@ function sb_posts_are_identical(int $existing_id, array $import_data): bool {
         && $post->post_excerpt === $import_data['post_excerpt'];
 }
 
-function sb_import_single_post(array $post_data, string $target_type, string $collision, string $media_dir): array {
+function sb_import_single_post(array $post_data, string $target_type, string $collision, string $media_dir, string $old_domain = '', string $new_domain = ''): array {
+    if ($old_domain && $old_domain !== $new_domain) {
+        sb_replace_domain_in_post($post_data, $old_domain, $new_domain);
+    }
+
     $existing_id = sb_find_existing_post($post_data, $target_type);
 
     if ($existing_id && $collision === 'skip') {
@@ -105,6 +109,57 @@ function sb_import_single_post(array $post_data, string $target_type, string $co
     return ['status' => $action, 'title' => $post_data['post_title']];
 }
 
+function sb_detect_source_domain(array $manifest): string {
+    if (empty($manifest['source_url'])) {
+        return '';
+    }
+    $parsed = parse_url($manifest['source_url']);
+    if (empty($parsed['host'])) {
+        return '';
+    }
+    $scheme = !empty($parsed['scheme']) ? $parsed['scheme'] : 'https';
+    return $scheme . '://' . $parsed['host'];
+}
+
+function sb_replace_domain_in_value(mixed $value, string $old, string $new): mixed {
+    if (is_array($value)) {
+        foreach ($value as $k => $v) {
+            $value[$k] = sb_replace_domain_in_value($v, $old, $new);
+        }
+        return $value;
+    }
+    if (!is_string($value)) {
+        return $value;
+    }
+    if (is_serialized($value)) {
+        $unserialized = @unserialize($value, ['allowed_classes' => false]);
+        if ($unserialized !== false || $value === serialize(false)) {
+            $replaced = sb_replace_domain_in_value($unserialized, $old, $new);
+            return serialize($replaced);
+        }
+    }
+    return str_replace($old, $new, $value);
+}
+
+function sb_replace_domain_in_post(array &$post_data, string $old_domain, string $new_domain): void {
+    if (empty($old_domain) || $old_domain === $new_domain) {
+        return;
+    }
+    foreach (['post_content', 'post_excerpt'] as $field) {
+        if (isset($post_data[$field])) {
+            $post_data[$field] = sb_replace_domain_in_value($post_data[$field], $old_domain, $new_domain);
+        }
+    }
+    if (!empty($post_data['meta']) && is_array($post_data['meta'])) {
+        foreach ($post_data['meta'] as $key => $values) {
+            $post_data['meta'][$key] = array_map(
+                fn($v) => sb_replace_domain_in_value($v, $old_domain, $new_domain),
+                (array) $values
+            );
+        }
+    }
+}
+
 add_action('wp_ajax_sb_import', 'sb_ajax_import');
 function sb_ajax_import() {
     check_ajax_referer('sb_import', 'nonce');
@@ -135,6 +190,15 @@ function sb_ajax_import() {
         wp_send_json_error(['message' => $manifest->get_error_message()]);
     }
 
+    $old_domain = sb_detect_source_domain($manifest);
+    $new_domain = '';
+    if ($old_domain) {
+        $site   = site_url();
+        $parsed = parse_url($site);
+        $new_domain = (!empty($parsed['scheme']) ? $parsed['scheme'] : 'https')
+                    . '://' . ($parsed['host'] ?? '');
+    }
+
     $source_type = sanitize_key($_POST['source_type'] ?? '');
     $target_type = sanitize_key($_POST['target_type'] ?? $source_type);
     $collision   = in_array($_POST['collision'] ?? '', ['skip', 'override'], true)
@@ -144,7 +208,7 @@ function sb_ajax_import() {
     $created = $updated = $skipped = $errors = [];
 
     foreach ($manifest['posts'] as $post_data) {
-        $result = sb_import_single_post($post_data, $target_type, $collision, $media_dir);
+        $result = sb_import_single_post($post_data, $target_type, $collision, $media_dir, $old_domain, $new_domain);
         switch ($result['status']) {
             case 'created':  $created[]  = $result['title']; break;
             case 'updated':  $updated[]  = $result['title']; break;

@@ -85,6 +85,7 @@ function sb_build_manifest(array $posts, string $post_type): array {
     }
     return [
         'exported_at' => date('c'),
+        'source_url'  => site_url(),
         'post_type'   => $post_type,
         'count'       => count($posts),
         'posts'       => $data,
