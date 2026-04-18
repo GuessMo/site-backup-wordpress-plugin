@@ -164,6 +164,48 @@ function sb_replace_domain_in_post(array &$post_data, string $old_domain, string
     }
 }
 
+function sb_get_upload_error_message(int $upload_error): string {
+    switch ($upload_error) {
+        case UPLOAD_ERR_INI_SIZE:
+        case UPLOAD_ERR_FORM_SIZE:
+            $upload_max = ini_get('upload_max_filesize') ?: 'unbekannt';
+            $post_max = ini_get('post_max_size') ?: 'unbekannt';
+            return 'Die ZIP-Datei überschreitet das Upload-Limit des Servers '
+                . '(upload_max_filesize=' . $upload_max . ', post_max_size=' . $post_max . ').';
+        case UPLOAD_ERR_PARTIAL:
+            return 'Die ZIP-Datei wurde nur teilweise hochgeladen. Bitte erneut versuchen.';
+        case UPLOAD_ERR_NO_FILE:
+            return 'Keine ZIP-Datei hochgeladen. Bitte eine ZIP-Datei auswählen.';
+        case UPLOAD_ERR_NO_TMP_DIR:
+            return 'Serverfehler beim Upload: Temporäres Verzeichnis fehlt.';
+        case UPLOAD_ERR_CANT_WRITE:
+            return 'Serverfehler beim Upload: Datei konnte nicht geschrieben werden.';
+        case UPLOAD_ERR_EXTENSION:
+            return 'Der Upload wurde durch eine Server-Erweiterung abgebrochen.';
+        default:
+            return 'Unbekannter Upload-Fehler (Code ' . $upload_error . ').';
+    }
+}
+
+function sb_get_uploaded_zip_file(string $field): array|WP_Error {
+    if (!isset($_FILES[$field]) || !is_array($_FILES[$field])) {
+        return new WP_Error('missing_upload_field', 'Kein Datei-Upload-Feld empfangen.');
+    }
+
+    $file = $_FILES[$field];
+    $upload_error = isset($file['error']) ? (int) $file['error'] : UPLOAD_ERR_NO_FILE;
+    if ($upload_error !== UPLOAD_ERR_OK) {
+        return new WP_Error('upload_failed', sb_get_upload_error_message($upload_error));
+    }
+
+    $tmp_name = (string) ($file['tmp_name'] ?? '');
+    if ($tmp_name === '' || !file_exists($tmp_name)) {
+        return new WP_Error('upload_tmp_missing', 'Upload unvollständig: Temporäre Datei nicht gefunden.');
+    }
+
+    return $file;
+}
+
 add_action('wp_ajax_sb_peek_manifest', 'sb_ajax_peek_manifest');
 function sb_ajax_peek_manifest(): void {
     check_ajax_referer('sb_peek_manifest', 'nonce');
@@ -171,11 +213,12 @@ function sb_ajax_peek_manifest(): void {
         wp_send_json_error(['message' => 'Nicht autorisiert.'], 403);
     }
 
-    if (empty($_FILES['sb_zip']['tmp_name'])) {
-        wp_send_json_error(['message' => 'Keine ZIP-Datei.']);
+    $file = sb_get_uploaded_zip_file('sb_zip');
+    if (is_wp_error($file)) {
+        wp_send_json_error(['message' => $file->get_error_message()]);
     }
 
-    $extract_dir = sb_extract_zip($_FILES['sb_zip']['tmp_name']);
+    $extract_dir = sb_extract_zip($file['tmp_name']);
     if (is_wp_error($extract_dir)) {
         wp_send_json_error(['message' => $extract_dir->get_error_message()]);
     }
@@ -211,11 +254,11 @@ function sb_ajax_import() {
         wp_send_json_error(['message' => 'Nicht autorisiert.'], 403);
     }
 
-    if (empty($_FILES['sb_zip']['tmp_name'])) {
-        wp_send_json_error(['message' => 'Keine ZIP-Datei hochgeladen.']);
+    $file = sb_get_uploaded_zip_file('sb_zip');
+    if (is_wp_error($file)) {
+        wp_send_json_error(['message' => $file->get_error_message()]);
     }
 
-    $file     = $_FILES['sb_zip'];
     $zip_tmp  = $file['tmp_name'];
     $zip_type = $file['type'];
 
