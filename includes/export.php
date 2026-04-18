@@ -170,16 +170,20 @@ function sb_ajax_export() {
     ]);
 
     $manifest = sb_build_manifest($posts);
-    $zip_path = sb_create_export_zip($manifest, $posts);
 
-    if (is_wp_error($zip_path)) {
-        wp_send_json_error(['message' => $zip_path->get_error_message()]);
+    $max_mb = absint($_POST['max_mb'] ?? 50);
+    $max_mb = max(10, min(500, $max_mb));
+
+    $zip_paths = sb_create_export_zips($manifest, $posts, $max_mb);
+
+    if (is_wp_error($zip_paths)) {
+        wp_send_json_error(['message' => $zip_paths->get_error_message()]);
     }
 
-    $download_url = sb_get_export_download_url($zip_path);
+    $download_urls = array_map('sb_get_export_download_url', $zip_paths);
 
     wp_send_json_success([
-        'url'   => $download_url,
+        'urls'  => $download_urls,
         'count' => count($posts),
     ]);
 }

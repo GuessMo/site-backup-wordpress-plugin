@@ -125,6 +125,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const data = new FormData();
             data.append('action', 'sb_export');
             data.append('nonce', siteBackup.nonce);
+            data.append('max_mb', siteBackup.splitMaxMb || 50);
             postGroups.querySelectorAll('input[name="post_ids[]"]:checked').forEach(function (cb) {
                 data.append('post_ids[]', cb.value);
             });
@@ -136,8 +137,17 @@ document.addEventListener('DOMContentLoaded', function () {
                         exportResult.innerHTML = '<p class="sb-error">Fehler: ' + (res.data?.message || 'Unbekannter Fehler') + '</p>';
                         return;
                     }
-                    exportResult.innerHTML = '<p class="sb-success">Export erfolgreich! '
-                        + '<a href="' + res.data.url + '" download>ZIP herunterladen</a></p>';
+                    const urls = res.data.urls || [];
+                    if (urls.length === 1) {
+                        exportResult.innerHTML = '<p class="sb-success">Export erfolgreich! '
+                            + '<a href="' + urls[0] + '" download>Export herunterladen</a></p>';
+                    } else {
+                        const links = urls.map(function (url, i) {
+                            return '<a href="' + url + '" download>Teil ' + (i + 1) + ' herunterladen</a>';
+                        }).join(' &nbsp; ');
+                        exportResult.innerHTML = '<p class="sb-success">Export erfolgreich! (' + urls.length + ' Teile)</p>'
+                            + '<p>' + links + '</p>';
+                    }
                 })
                 .catch(function () {
                     exportResult.innerHTML = '<p class="sb-error">Netzwerkfehler beim Export.</p>';
@@ -154,6 +164,13 @@ document.addEventListener('DOMContentLoaded', function () {
         importForm.addEventListener('submit', function (e) {
             e.preventDefault();
             const result = document.getElementById('sb-import-result');
+
+            const zipFile = importForm.querySelector('input[name="sb_zip"]');
+            if (!zipFile || !zipFile.files.length) {
+                result.innerHTML = '<p class="sb-error">Bitte eine ZIP-Datei auswählen.</p>';
+                return;
+            }
+
             result.innerHTML = '<p>Import läuft…</p>';
 
             const data = new FormData(importForm);

@@ -30,6 +30,7 @@ function sb_enqueue_admin_assets($hook) {
         'importSettingsNonce' => wp_create_nonce('sb_import_settings'),
         'ajaxUrl'             => admin_url('admin-ajax.php'),
         'peekNonce'    => wp_create_nonce('sb_peek_manifest'),
+        'splitMaxMb'   => 50,
         'availableCpts' => array_values(array_map(
             fn($pt) => ['name' => $pt->name, 'label' => $pt->label],
             array_filter(
