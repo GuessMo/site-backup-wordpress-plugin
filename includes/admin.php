@@ -24,9 +24,11 @@ function sb_enqueue_admin_assets($hook) {
         'importNonce'      => wp_create_nonce('sb_import'),
         'postsNonce'       => wp_create_nonce('sb_get_posts'),
         'allPostsNonce'    => wp_create_nonce('sb_get_all_posts'),
-        'exportUsersNonce' => wp_create_nonce('sb_export_users'),
-        'importUsersNonce' => wp_create_nonce('sb_import_users'),
-        'ajaxUrl'          => admin_url('admin-ajax.php'),
+        'exportUsersNonce'    => wp_create_nonce('sb_export_users'),
+        'importUsersNonce'    => wp_create_nonce('sb_import_users'),
+        'exportSettingsNonce' => wp_create_nonce('sb_export_settings'),
+        'importSettingsNonce' => wp_create_nonce('sb_import_settings'),
+        'ajaxUrl'             => admin_url('admin-ajax.php'),
     ]);
 }
 
@@ -40,6 +42,7 @@ function sb_render_admin_page() {
             <button class="sb-tab active" data-tab="export">Export</button>
             <button class="sb-tab" data-tab="import">Import</button>
             <button class="sb-tab" data-tab="users">Benutzer</button>
+            <button class="sb-tab" data-tab="settings">Einstellungen</button>
         </nav>
 
         <div class="sb-tab-content" id="sb-tab-export">
@@ -138,6 +141,52 @@ function sb_render_admin_page() {
                 <button type="button" id="sb-import-users-btn" class="button button-primary">Importieren</button>
             </p>
             <div id="sb-import-users-result"></div>
+        </div>
+
+        <div class="sb-tab-content" id="sb-tab-settings" style="display:none;">
+            <h2>Einstellungen exportieren</h2>
+            <?php
+            $settings_whitelist = sb_get_settings_whitelist();
+            $theme_keys = sb_get_theme_plugin_option_keys();
+            if (!empty($theme_keys)) {
+                $settings_whitelist['theme_plugin'] = [
+                    'label' => 'Theme & Plugin-Einstellungen',
+                    'keys'  => $theme_keys,
+                ];
+            }
+            $protected_keys = ['siteurl', 'home'];
+            foreach ($settings_whitelist as $group_key => $group): ?>
+                <fieldset style="border:1px solid #ddd; border-radius:4px; padding:12px 16px; margin-bottom:12px;">
+                    <legend style="font-weight:600; padding:0 6px;"><?= esc_html($group['label']) ?></legend>
+                    <?php foreach ($group['keys'] as $option_key): ?>
+                        <label style="display:block; margin:4px 0;">
+                            <input type="checkbox" name="sb_setting_keys[]" value="<?= esc_attr($option_key) ?>">
+                            <code><?= esc_html($option_key) ?></code>
+                            <?php if (in_array($option_key, $protected_keys, true)): ?>
+                                <span style="color:#888; font-size:0.8em;">(wird beim Import nicht überschrieben)</span>
+                            <?php endif; ?>
+                        </label>
+                    <?php endforeach; ?>
+                </fieldset>
+            <?php endforeach; ?>
+            <p class="submit">
+                <button type="button" id="sb-export-settings-btn" class="button button-primary">Ausgewählte exportieren</button>
+            </p>
+            <div id="sb-export-settings-result"></div>
+
+            <hr>
+
+            <h2>Einstellungen importieren</h2>
+            <table class="form-table">
+                <tr>
+                    <th><label for="sb-settings-zip">Settings-ZIP</label></th>
+                    <td><input type="file" id="sb-settings-zip" accept=".zip"></td>
+                </tr>
+            </table>
+            <p class="submit">
+                <button type="button" id="sb-import-settings-btn" class="button button-primary">Importieren</button>
+            </p>
+            <div id="sb-import-settings-result"></div>
         </div>
     </div>
     <?php

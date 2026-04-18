@@ -257,4 +257,77 @@ document.addEventListener('DOMContentLoaded', function () {
                 });
         });
     }
-});
+
+    // ── SETTINGS ─────────────────────────────────────────────────────────────────
+    const exportSettingsBtn    = document.getElementById('sb-export-settings-btn');
+    const exportSettingsResult = document.getElementById('sb-export-settings-result');
+    const importSettingsBtn    = document.getElementById('sb-import-settings-btn');
+    const importSettingsResult = document.getElementById('sb-import-settings-result');
+    const settingsZipInput     = document.getElementById('sb-settings-zip');
+
+    if (exportSettingsBtn) {
+        exportSettingsBtn.addEventListener('click', function () {
+            const checked = document.querySelectorAll('input[name="sb_setting_keys[]"]:checked');
+            if (!checked.length) {
+                exportSettingsResult.innerHTML = '<p class="sb-error">Bitte mindestens eine Einstellung auswählen.</p>';
+                return;
+            }
+            exportSettingsResult.innerHTML = '<p>Exportiere Einstellungen…</p>';
+            const data = new FormData();
+            data.append('action', 'sb_export_settings');
+            data.append('nonce', siteBackup.exportSettingsNonce);
+            checked.forEach(cb => data.append('keys[]', cb.value));
+
+            fetch(siteBackup.ajaxUrl, { method: 'POST', body: data })
+                .then(r => r.json())
+                .then(function (res) {
+                    if (!res.success) {
+                        exportSettingsResult.innerHTML = '<p class="sb-error">Fehler: ' + (res.data?.message || 'Fehler') + '</p>';
+                        return;
+                    }
+                    exportSettingsResult.innerHTML = '<p class="sb-success">'
+                        + res.data.count + ' Einstellungen exportiert. '
+                        + '<a href="' + res.data.url + '" download>ZIP herunterladen</a></p>';
+                })
+                .catch(function () {
+                    exportSettingsResult.innerHTML = '<p class="sb-error">Netzwerkfehler.</p>';
+                });
+        });
+    }
+
+    if (importSettingsBtn) {
+        importSettingsBtn.addEventListener('click', function () {
+            if (!settingsZipInput || !settingsZipInput.files.length) {
+                importSettingsResult.innerHTML = '<p class="sb-error">Bitte ZIP-Datei auswählen.</p>';
+                return;
+            }
+            importSettingsResult.innerHTML = '<p>Importiere Einstellungen…</p>';
+            const data = new FormData();
+            data.append('action', 'sb_import_settings');
+            data.append('nonce', siteBackup.importSettingsNonce);
+            data.append('sb_settings_zip', settingsZipInput.files[0]);
+
+            fetch(siteBackup.ajaxUrl, { method: 'POST', body: data })
+                .then(r => r.json())
+                .then(function (res) {
+                    if (!res.success) {
+                        importSettingsResult.innerHTML = '<p class="sb-error">Fehler: ' + (res.data?.message || 'Fehler') + '</p>';
+                        return;
+                    }
+                    const d = res.data;
+                    let html = '<p class="sb-success"><strong>' + d.updated.length + ' Einstellungen importiert.</strong></p>';
+                    if (d.skipped_protected && d.skipped_protected.length) {
+                        html += '<div class="sb-warning">⚠️ Folgende Einstellungen wurden <strong>nicht</strong> überschrieben (geschützt): '
+                            + d.skipped_protected.map(k => '<code>' + k + '</code>').join(', ') + '</div>';
+                    }
+                    if (d.skipped_invalid && d.skipped_invalid.length) {
+                        html += '<div class="sb-warning">Unbekannte Keys übersprungen: '
+                            + d.skipped_invalid.map(k => '<code>' + k + '</code>').join(', ') + '</div>';
+                    }
+                    importSettingsResult.innerHTML = html;
+                })
+                .catch(function () {
+                    importSettingsResult.innerHTML = '<p class="sb-error">Netzwerkfehler.</p>';
+                });
+        });
+    }
