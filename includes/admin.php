@@ -1,3 +1,78 @@
 <?php
-// TODO: Inhalt aus verlorenen Dateien wiederherstellen (admin.php)
-// Diese Datei wurde durch einen Submodul-Fehler beim Umbenennen geleert.
+if (!defined('ABSPATH')) exit;
+
+add_action('admin_menu', 'sb_register_admin_page');
+function sb_register_admin_page() {
+    add_menu_page(
+        'Site Backup',
+        'Site Backup',
+        'manage_options',
+        'site-backup',
+        'sb_render_admin_page',
+        'dashicons-backup',
+        80
+    );
+}
+
+add_action('admin_enqueue_scripts', 'sb_enqueue_admin_assets');
+function sb_enqueue_admin_assets($hook) {
+    if ($hook !== 'toplevel_page_site-backup') return;
+    wp_enqueue_style('sb-admin', plugin_dir_url(dirname(__FILE__)) . 'assets/admin.css', [], '0.1.0');
+    wp_enqueue_script('sb-admin', plugin_dir_url(dirname(__FILE__)) . 'assets/admin.js', [], '0.1.0', true);
+    wp_localize_script('sb-admin', 'siteBackup', [
+        'nonce'   => wp_create_nonce('sb_export'),
+        'ajaxUrl' => admin_url('admin-ajax.php'),
+    ]);
+}
+
+function sb_render_admin_page() {
+    $post_types = get_post_types(['public' => true], 'objects');
+    $current_year = (int) date('Y');
+    ?>
+    <div class="wrap sb-wrap">
+        <h1>Site Backup</h1>
+        <nav class="sb-tabs">
+            <button class="sb-tab active" data-tab="export">Export</button>
+            <button class="sb-tab" data-tab="import">Import</button>
+        </nav>
+
+        <div class="sb-tab-content" id="sb-tab-export">
+            <h2>Posts exportieren</h2>
+            <form id="sb-export-form">
+                <table class="form-table">
+                    <tr>
+                        <th><label for="sb-post-type">Post Type</label></th>
+                        <td>
+                            <select name="post_type" id="sb-post-type">
+                                <?php foreach ($post_types as $pt): ?>
+                                    <option value="<?= esc_attr($pt->name) ?>"><?= esc_html($pt->label) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><label for="sb-year">Ab Jahr</label></th>
+                        <td>
+                            <select name="year" id="sb-year">
+                                <option value="0">Alle Jahre</option>
+                                <?php for ($y = $current_year; $y >= 2010; $y--): ?>
+                                    <option value="<?= $y ?>"><?= $y ?></option>
+                                <?php endfor; ?>
+                            </select>
+                        </td>
+                    </tr>
+                </table>
+                <p class="submit">
+                    <button type="submit" class="button button-primary">Exportieren</button>
+                </p>
+            </form>
+            <div id="sb-export-result"></div>
+        </div>
+
+        <div class="sb-tab-content" id="sb-tab-import" style="display:none;">
+            <h2>Posts importieren</h2>
+            <p>Import-Funktion folgt in Milestone 8.</p>
+        </div>
+    </div>
+    <?php
+}
