@@ -1,10 +1,10 @@
 <?php
 /**
- * Plugin Name: Site Backup
+ * Plugin Name: TSV Site Backup
  * Description: Export and import WordPress posts (including media) between instances with post type mapping.
  * Version: 0.1.0
  * Author: GuessMo
- * Text Domain: site-backup
+ * Text Domain: tsv-site-backup
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
