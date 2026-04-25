@@ -69,7 +69,7 @@ function sb_render_admin_page() {
         </nav>
 
         <div class="sb-tab-content" id="sb-tab-export">
-            <h2>Posts exportieren</h2>
+            <h2>Wähle Posts zum exportieren</h2>
             <form id="sb-export-form">
                 <div class="sb-post-list-toolbar">
                     <button type="button" id="sb-toggle-all" class="button">Alle auswählen</button>
