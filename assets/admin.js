@@ -115,10 +115,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
 var postsPerZip = 10;
     var postsPerZipInput = exportForm.querySelector('#sb-posts-per-zip');
-    if (postsPerZipInput && postsPerZipInput.value) {
-    postsPerZip = parseInt(postsPerZipInput.value, 10) || 10;
-    if (postsPerZip < 0) postsPerZip = 10;
-    if (postsPerZip > 50) postsPerZip = 50;
+    if (postsPerZipInput) {
+        var rawVal = parseInt(postsPerZipInput.value, 10);
+        if (isNaN(rawVal) || rawVal < 0) {
+            postsPerZip = 10;
+        } else if (rawVal === 0) {
+            postsPerZip = 1;
+        } else {
+            postsPerZip = Math.min(rawVal, 50);
+        }
     }
 
             var selectedPosts = postGroups.querySelectorAll('input[name="post_ids[]"]:checked');
@@ -150,7 +155,7 @@ var postsPerZip = 10;
 
             function exportNextPart() {
                 if (currentPart >= totalParts) {
-                    exportResult.innerHTML = '<p class="sb-success">' + totalCount + ' Posts in ' + totalParts + ' ZIPs exportiert:</p><p>' +
+                    exportResult.innerHTML = '<p class="sb-success">' + totalCount + ' Posts in ' + allUrls.length + ' ZIPs exportiert:</p><p>' +
                         allUrls.map(function(url, i) { return '<a href="' + url + '" download>ZIP ' + (i+1) + '</a>'; }).join(' &nbsp; ') + '</p>';
                     return;
                 }
