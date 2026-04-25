@@ -79,8 +79,8 @@ function sb_render_admin_page() {
                 <div id="sb-post-groups"></div>
                 <p style="margin: 12px 0;">
                     <label for="sb-posts-per-zip">Posts pro ZIP:</label>
-                    <input type="number" id="sb-posts-per-zip" name="posts_per_zip" value="10" min="1" max="50" style="width:60px;">
-                    <span style="color:#666;font-size:0.9em;">(1-50)</span>
+                    <input type="number" id="sb-posts-per-zip" name="posts_per_zip" value="10" min="0" max="50" style="width:60px;">
+                    <span style="color:#666;font-size:0.9em;">(0 = 1 Post pro ZIP)</span>
                 </p>
                 <p class="submit">
                     <button type="submit" id="sb-export-btn" class="button button-primary" disabled>Exportieren</button>

@@ -175,6 +175,11 @@ function sb_ajax_export() {
     $posts_per_zip = isset($_POST['posts_per_zip']) ? absint($_POST['posts_per_zip']) : 10;
     if ($posts_per_zip < 1) $posts_per_zip = 10;
     if ($posts_per_zip > 50) $posts_per_zip = 50;
+    
+    // 0 means 1 post per zip
+    if ($posts_per_zip === 0) {
+        $posts_per_zip = 1;
+    }
 
     $chunks = array_chunk($post_ids, $posts_per_zip);
     $total_parts = count($chunks);
