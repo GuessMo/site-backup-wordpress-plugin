@@ -17,37 +17,46 @@ function sb_register_admin_page() {
 add_action('admin_enqueue_scripts', 'sb_enqueue_admin_assets');
 function sb_enqueue_admin_assets($hook) {
     if ($hook !== 'toplevel_page_site-backup') return;
-    wp_enqueue_style('sb-admin', plugin_dir_url(dirname(__FILE__)) . 'assets/admin.css', [], '0.1.0');
-    wp_enqueue_script('sb-admin', plugin_dir_url(dirname(__FILE__)) . 'assets/admin.js', [], '0.1.0', true);
-    wp_localize_script('sb-admin', 'siteBackup', [
-        'nonce'            => wp_create_nonce('sb_export'),
-        'importNonce'      => wp_create_nonce('sb_import'),
-        'postsNonce'       => wp_create_nonce('sb_get_posts'),
-        'allPostsNonce'    => wp_create_nonce('sb_get_all_posts'),
+    wp_enqueue_style('sb-admin', plugin_dir_url(dirname(__FILE__)) . 'assets/admin.css', array(), '0.1.0');
+    wp_enqueue_script('sb-admin', plugin_dir_url(dirname(__FILE__)) . 'assets/admin.js', array(), '0.1.0', true);
+
+    $cpt_blacklist = array(
+        'attachment', 'revision', 'nav_menu_item', 'custom_css',
+        'customize_changeset', 'oembed_cache', 'user_request',
+        'wp_block', 'wp_template', 'wp_template_part',
+        'wp_global_styles', 'wp_navigation',
+    );
+    $filtered = array_filter(
+        get_post_types(array('show_ui' => true), 'objects'),
+        function($pt) use ($cpt_blacklist) {
+            return !in_array($pt->name, $cpt_blacklist, true);
+        }
+    );
+    $available_cpts = array_values(array_map(
+        function($pt) {
+            return array('name' => $pt->name, 'label' => $pt->label);
+        },
+        $filtered
+    ));
+
+    wp_localize_script('sb-admin', 'siteBackup', array(
+        'nonce'               => wp_create_nonce('sb_export'),
+        'importNonce'         => wp_create_nonce('sb_import'),
+        'postsNonce'          => wp_create_nonce('sb_get_posts'),
+        'allPostsNonce'       => wp_create_nonce('sb_get_all_posts'),
         'exportUsersNonce'    => wp_create_nonce('sb_export_users'),
         'importUsersNonce'    => wp_create_nonce('sb_import_users'),
         'exportSettingsNonce' => wp_create_nonce('sb_export_settings'),
         'importSettingsNonce' => wp_create_nonce('sb_import_settings'),
         'ajaxUrl'             => admin_url('admin-ajax.php'),
-        'peekNonce'    => wp_create_nonce('sb_peek_manifest'),
-        'splitMaxMb'   => 50,
-        'availableCpts' => array_values(array_map(
-            function($pt) { return array('name' => $pt->name, 'label' => $pt->label); },
-            array_filter(
-                get_post_types(array('show_ui' => true), 'objects'),
-                function($pt) { return !in_array($pt->name, array(
-                    'attachment', 'revision', 'nav_menu_item', 'custom_css',
-                    'customize_changeset', 'oembed_cache', 'user_request',
-                    'wp_block', 'wp_template', 'wp_template_part',
-                    'wp_global_styles', 'wp_navigation',
-                ), true); }
-            )
-        )),
-    ]);
+        'peekNonce'           => wp_create_nonce('sb_peek_manifest'),
+        'splitMaxMb'          => 50,
+        'availableCpts'       => $available_cpts,
+    ));
 }
 
 function sb_render_admin_page() {
-    $post_types = get_post_types(['public' => true], 'objects');
+    $post_types = get_post_types(array('public' => true), 'objects');
     $current_year = (int) date('Y');
     ?>
     <div class="wrap sb-wrap">
@@ -166,19 +175,19 @@ function sb_render_admin_page() {
             $settings_whitelist = sb_get_settings_whitelist();
             $theme_keys = sb_get_theme_plugin_option_keys();
             if (!empty($theme_keys)) {
-                $settings_whitelist['theme_plugin'] = [
+                $settings_whitelist['theme_plugin'] = array(
                     'label' => 'Theme & Plugin-Einstellungen',
                     'keys'  => $theme_keys,
-                ];
+                );
             }
-            $protected_keys = ['siteurl', 'home'];
+            $protected_keys = array('siteurl', 'home');
             foreach ($settings_whitelist as $group_key => $group): ?>
                 <fieldset style="border:1px solid #ddd; border-radius:4px; padding:12px 16px; margin-bottom:12px;">
-                    <legend style="font-weight:600; padding:0 6px;"><?= esc_html($group['label']) ?></legend>
+                    <legend style="font-weight:600; padding:0 6px;"><?php echo esc_html($group['label']); ?></legend>
                     <?php foreach ($group['keys'] as $option_key): ?>
                         <label style="display:block; margin:4px 0;">
-                            <input type="checkbox" name="sb_setting_keys[]" value="<?= esc_attr($option_key) ?>">
-                            <code><?= esc_html($option_key) ?></code>
+                            <input type="checkbox" name="sb_setting_keys[]" value="<?php echo esc_attr($option_key); ?>">
+                            <code><?php echo esc_html($option_key); ?></code>
                             <?php if (in_array($option_key, $protected_keys, true)): ?>
                                 <span style="color:#888; font-size:0.8em;">(wird beim Import nicht überschrieben)</span>
                             <?php endif; ?>

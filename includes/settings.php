@@ -1,32 +1,32 @@
 <?php
 if (!defined('ABSPATH')) exit;
 
-function sb_get_settings_whitelist(): array {
-    return [
-        'general' => [
+function sb_get_settings_whitelist() {
+    return array(
+        'general' => array(
             'label' => 'Allgemein',
-            'keys'  => ['blogname', 'blogdescription', 'siteurl', 'home', 'admin_email', 'blogpublic'],
-        ],
-        'permalinks' => [
+            'keys'  => array('blogname', 'blogdescription', 'siteurl', 'home', 'admin_email', 'blogpublic'),
+        ),
+        'permalinks' => array(
             'label' => 'Permalinks',
-            'keys'  => ['permalink_structure', 'category_base', 'tag_base'],
-        ],
-        'media' => [
+            'keys'  => array('permalink_structure', 'category_base', 'tag_base'),
+        ),
+        'media' => array(
             'label' => 'Medien',
-            'keys'  => [
+            'keys'  => array(
                 'thumbnail_size_w', 'thumbnail_size_h',
                 'medium_size_w', 'medium_size_h',
                 'large_size_w', 'large_size_h',
                 'uploads_use_yearmonth_folders',
-            ],
-        ],
-    ];
+            ),
+        ),
+    );
 }
 
-function sb_get_theme_plugin_option_keys(): array {
+function sb_get_theme_plugin_option_keys() {
     global $wpdb;
-    $prefixes = ['tsvd_%', 'sb_%', 'klaro_%'];
-    $keys = [];
+    $prefixes = array('tsvd_%', 'sb_%', 'klaro_%');
+    $keys = array();
     foreach ($prefixes as $prefix) {
         $results = $wpdb->get_col(
             $wpdb->prepare(
@@ -36,16 +36,15 @@ function sb_get_theme_plugin_option_keys(): array {
         );
         $keys = array_merge($keys, $results);
     }
-    // Interne Transients/Optionen ausschließen
-    $keys = array_filter($keys, function ($k) {
+    $keys = array_filter($keys, function($k) {
         return !str_contains($k, 'transient') && !str_contains($k, '_user_roles');
     });
     return array_values(array_unique($keys));
 }
 
-function sb_get_all_allowed_keys(): array {
+function sb_get_all_allowed_keys() {
     $whitelist = sb_get_settings_whitelist();
-    $keys = [];
+    $keys = array();
     foreach ($whitelist as $group) {
         $keys = array_merge($keys, $group['keys']);
     }
@@ -53,36 +52,34 @@ function sb_get_all_allowed_keys(): array {
     return array_unique($keys);
 }
 
-// ── EXPORT ───────────────────────────────────────────────────────────────────
-
 add_action('wp_ajax_sb_export_settings', 'sb_ajax_export_settings');
 function sb_ajax_export_settings() {
     check_ajax_referer('sb_export_settings', 'nonce');
     if (!current_user_can('manage_options')) {
-        wp_send_json_error(['message' => 'Nicht autorisiert.'], 403);
+        wp_send_json_error(array('message' => 'Nicht autorisiert.'), 403);
     }
 
     $requested_keys = isset($_POST['keys']) && is_array($_POST['keys'])
         ? array_map('sanitize_key', $_POST['keys'])
-        : [];
+        : array();
 
     if (empty($requested_keys)) {
-        wp_send_json_error(['message' => 'Keine Einstellungen ausgewählt.']);
+        wp_send_json_error(array('message' => 'Keine Einstellungen ausgewählt.'));
     }
 
-    $allowed = sb_get_all_allowed_keys();
-    $settings = [];
+    $allowed  = sb_get_all_allowed_keys();
+    $settings = array();
     foreach ($requested_keys as $key) {
         if (!in_array($key, $allowed, true)) continue;
         $settings[$key] = get_option($key);
     }
 
-    $manifest = [
+    $manifest = array(
         'exported_at' => date('c'),
         'source_url'  => site_url(),
         'count'       => count($settings),
         'settings'    => $settings,
-    ];
+    );
 
     $upload_dir = wp_upload_dir();
     $export_dir = trailingslashit($upload_dir['basedir']) . 'sb-exports';
@@ -91,59 +88,57 @@ function sb_ajax_export_settings() {
     $zip_path  = $export_dir . "/sb-settings-{$timestamp}.zip";
 
     if (!class_exists('ZipArchive')) {
-        wp_send_json_error(['message' => 'ZipArchive nicht verfügbar.']);
+        wp_send_json_error(array('message' => 'ZipArchive nicht verfügbar.'));
     }
 
     $zip = new ZipArchive();
     if ($zip->open($zip_path, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
-        wp_send_json_error(['message' => 'ZIP konnte nicht erstellt werden.']);
+        wp_send_json_error(array('message' => 'ZIP konnte nicht erstellt werden.'));
     }
     $zip->addFromString('settings.json', json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
     $zip->close();
 
     $url = trailingslashit($upload_dir['baseurl']) . "sb-exports/sb-settings-{$timestamp}.zip";
-    wp_send_json_success(['url' => $url, 'count' => count($settings)]);
+    wp_send_json_success(array('url' => $url, 'count' => count($settings)));
 }
-
-// ── IMPORT ───────────────────────────────────────────────────────────────────
 
 add_action('wp_ajax_sb_import_settings', 'sb_ajax_import_settings');
 function sb_ajax_import_settings() {
     check_ajax_referer('sb_import_settings', 'nonce');
     if (!current_user_can('manage_options')) {
-        wp_send_json_error(['message' => 'Nicht autorisiert.'], 403);
+        wp_send_json_error(array('message' => 'Nicht autorisiert.'), 403);
     }
 
     if (empty($_FILES['sb_settings_zip']['tmp_name'])) {
-        wp_send_json_error(['message' => 'Keine ZIP-Datei hochgeladen.']);
+        wp_send_json_error(array('message' => 'Keine ZIP-Datei hochgeladen.'));
     }
 
     $file = $_FILES['sb_settings_zip'];
     if (!str_ends_with($file['name'], '.zip')) {
-        wp_send_json_error(['message' => 'Nur ZIP-Dateien erlaubt.']);
+        wp_send_json_error(array('message' => 'Nur ZIP-Dateien erlaubt.'));
     }
 
     $extract_dir = sb_extract_zip($file['tmp_name']);
     if (is_wp_error($extract_dir)) {
-        wp_send_json_error(['message' => $extract_dir->get_error_message()]);
+        wp_send_json_error(array('message' => $extract_dir->get_error_message())); 
     }
 
     $json_path = trailingslashit($extract_dir) . 'settings.json';
     if (!file_exists($json_path)) {
-        wp_send_json_error(['message' => 'settings.json nicht gefunden.']);
+        wp_send_json_error(array('message' => 'settings.json nicht gefunden.'));
     }
 
     $manifest = json_decode(file_get_contents($json_path), true);
     if (!is_array($manifest) || !isset($manifest['settings'])) {
-        wp_send_json_error(['message' => 'Ungültiges settings.json.']);
+        wp_send_json_error(array('message' => 'Ungültiges settings.json.'));
     }
 
-    $protected  = ['siteurl', 'home'];
-    $allowed    = sb_get_all_allowed_keys();
-    $updated    = [];
-    $skipped_protected = [];
-    $skipped_invalid   = [];
-    $warnings   = [];
+    $protected         = array('siteurl', 'home');
+    $allowed           = sb_get_all_allowed_keys();
+    $updated           = array();
+    $skipped_protected = array();
+    $skipped_invalid   = array();
+    $warnings          = array();
 
     foreach ($manifest['settings'] as $key => $value) {
         $key = sanitize_key($key);
@@ -155,23 +150,17 @@ function sb_ajax_import_settings() {
             $skipped_invalid[] = $key;
             continue;
         }
-        $result = update_option($key, $value);
-        if ($result) {
-            $updated[] = $key;
-        } else {
-            // update_option gibt false zurück wenn Wert identisch — kein echter Fehler
-            $updated[] = $key;
-        }
+        update_option($key, $value);
+        $updated[] = $key;
     }
 
-    // Temp aufräumen
     @array_map('unlink', glob($extract_dir . '/*'));
     @rmdir($extract_dir);
 
-    wp_send_json_success([
+    wp_send_json_success(array(
         'updated'           => $updated,
         'skipped_protected' => $skipped_protected,
         'skipped_invalid'   => $skipped_invalid,
         'warnings'          => $warnings,
-    ]);
+    ));
 }
