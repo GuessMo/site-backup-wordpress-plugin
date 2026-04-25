@@ -109,9 +109,26 @@ function sb_import_single_post(array $post_data, string $target_type, string $co
         }
     }
 
-    // Medien
+    // Medien importieren + ID-Map zurückbekommen
+    $id_map = [];
     if (!empty($post_data['attachments'])) {
-        sb_import_attachments($post_id, $post_data['attachments'], $media_dir);
+        $id_map = sb_import_attachments($post_id, $post_data['attachments'], $media_dir);
+    }
+
+    // Meta-Felder mit Attachment-IDs remappen (z. B. animal_images, _thumbnail_id)
+    if (!empty($id_map)) {
+        $remap_keys = apply_filters('sb_attachment_meta_keys', ['_thumbnail_id', 'animal_images'], get_post($post_id));
+        foreach ($remap_keys as $key) {
+            $value = get_post_meta($post_id, $key, true);
+            if (empty($value)) continue;
+
+            if (is_array($value)) {
+                $new_value = array_map(fn($v) => isset($id_map[(int) $v]) ? $id_map[(int) $v] : $v, $value);
+                update_post_meta($post_id, $key, $new_value);
+            } elseif (is_numeric($value) && isset($id_map[(int) $value])) {
+                update_post_meta($post_id, $key, $id_map[(int) $value]);
+            }
+        }
     }
 
     return ['status' => $action, 'title' => $post_data['post_title']];

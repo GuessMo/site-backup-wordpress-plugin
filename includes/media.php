@@ -2,19 +2,49 @@
 if (!defined('ABSPATH')) exit;
 
 function sb_collect_attachment_names(WP_Post $post): array {
-    $attachments = get_attached_media('', $post->ID);
-    $result = [];
-    foreach ($attachments as $att) {
-        $file = get_attached_file($att->ID);
-        if (!$file || !file_exists($file)) continue;
-        $upload_dir = wp_upload_dir();
-        $relative   = str_replace(trailingslashit($upload_dir['basedir']), '', $file);
-        $result[] = [
-            'id'       => $att->ID,
-            'file'     => $file,
-            'relative' => $relative,
+    $upload_dir = wp_upload_dir();
+    $base_dir   = trailingslashit($upload_dir['basedir']);
+    $result     = [];
+    $seen_ids   = [];
+
+    $add_attachment = function (int $att_id) use ($base_dir, &$result, &$seen_ids): void {
+        if ($att_id <= 0 || in_array($att_id, $seen_ids, true)) return;
+        $file = get_attached_file($att_id);
+        if (!$file || !file_exists($file)) return;
+        $relative      = str_replace($base_dir, '', $file);
+        $media_folders = [];
+        $folder_terms  = wp_get_object_terms($att_id, 'media_folder', ['fields' => 'slugs']);
+        if (!is_wp_error($folder_terms)) {
+            $media_folders = $folder_terms;
+        }
+        $result[]   = [
+            'id'            => $att_id,
+            'file'          => $file,
+            'relative'      => $relative,
+            'media_folders' => $media_folders,
         ];
+        $seen_ids[] = $att_id;
+    };
+
+    // 1. Direkt angehängte Medien (post_parent = post_id)
+    foreach (get_attached_media('', $post->ID) as $att) {
+        $add_attachment($att->ID);
     }
+
+    // 2. Meta-basierte Anhänge (Featured Image, Galerien, etc.)
+    // Filter erlaubt Theme/Plugins eigene Meta-Keys zu registrieren.
+    $meta_keys = apply_filters('sb_attachment_meta_keys', ['_thumbnail_id', 'animal_images'], $post);
+    foreach ($meta_keys as $key) {
+        $value = get_post_meta($post->ID, $key, true);
+        if (empty($value)) continue;
+        $ids = is_array($value)
+            ? array_map('intval', $value)
+            : [intval($value)];
+        foreach ($ids as $att_id) {
+            $add_attachment($att_id);
+        }
+    }
+
     return $result;
 }
 
@@ -149,10 +179,18 @@ function sb_get_export_download_url(string $zip_path): string {
     );
 }
 
-function sb_import_attachments(int $post_id, array $attachments, string $media_dir): void {
+/**
+ * Importiert Anhänge und gibt eine Map old_id => new_id zurück.
+ * Stellt außerdem Mediathek-Ordner (Taxonomy media_folder) wieder her.
+ *
+ * @return array<int,int> Map von alter Attachment-ID auf neue ID.
+ */
+function sb_import_attachments(int $post_id, array $attachments, string $media_dir): array {
     require_once ABSPATH . 'wp-admin/includes/image.php';
     require_once ABSPATH . 'wp-admin/includes/file.php';
     require_once ABSPATH . 'wp-admin/includes/media.php';
+
+    $id_map = []; // old_id => new_id
 
     foreach ($attachments as $attachment) {
         $relative = $attachment['relative'] ?? '';
@@ -161,23 +199,44 @@ function sb_import_attachments(int $post_id, array $attachments, string $media_d
         $file = trailingslashit($media_dir) . 'media/' . $relative;
         if (!file_exists($file)) continue;
 
-        // Bereits vorhanden?
+        $old_id = isset($attachment['id']) ? (int) $attachment['id'] : 0;
+
+        // Bereits vorhanden? → ID-Map trotzdem befüllen
         $existing = get_posts([
-            'post_type'   => 'attachment',
-            'meta_key'    => '_wp_attached_file',
-            'meta_value'  => $relative,
-            'numberposts' => 1,
+            'post_type'      => 'attachment',
+            'meta_key'       => '_wp_attached_file',
+            'meta_value'     => $relative,
+            'numberposts'    => 1,
+            'fields'         => 'ids',
         ]);
-        if (!empty($existing)) continue;
+        if (!empty($existing)) {
+            if ($old_id > 0) {
+                $id_map[$old_id] = (int) $existing[0];
+            }
+            continue;
+        }
 
         $file_array = [
             'name'     => basename($file),
             'tmp_name' => $file,
         ];
-        $result = media_handle_sideload($file_array, $post_id);
-        // Fehler werden still geloggt, Import wird fortgesetzt
-        if (is_wp_error($result)) {
-            error_log('sb_import_attachments error: ' . $result->get_error_message());
+        $new_id = media_handle_sideload($file_array, $post_id);
+
+        if (is_wp_error($new_id)) {
+            error_log('sb_import_attachments error: ' . $new_id->get_error_message());
+            continue;
+        }
+
+        if ($old_id > 0) {
+            $id_map[$old_id] = $new_id;
+        }
+
+        // Mediathek-Ordner (Taxonomy) wiederherstellen
+        $folders = $attachment['media_folders'] ?? [];
+        if (!empty($folders) && taxonomy_exists('media_folder')) {
+            wp_set_object_terms($new_id, $folders, 'media_folder', true);
         }
     }
+
+    return $id_map;
 }
