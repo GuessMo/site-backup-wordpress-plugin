@@ -92,6 +92,13 @@ function sb_render_admin_page() {
                         <th><label for="sb-zip">Export-ZIP</label></th>
                         <td><input type="file" name="sb_zip" id="sb-zip" accept=".zip"></td>
                     </tr>
+                    <tr>
+                        <th><label for="sb-zip-file">Oder vom Server</label></th>
+                        <td>
+                            <input type="text" name="sb_zip_file" id="sb-zip-file" placeholder="dateiname.zip" style="width:250px;">
+                            <p class="description">ZIP via FTP nach <code>wp-content/uploads/sb-exports/</code> hochladen und hier eingeben.</p>
+                        </td>
+                    </tr>
                 </table>
                 <div id="sb-cpt-mapping" style="display:none; margin: 12px 0;">
                     <h3>CPT-Zuordnung</h3>

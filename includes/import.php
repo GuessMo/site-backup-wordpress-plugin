@@ -227,6 +227,119 @@ function sb_get_uploaded_zip_file(string $field): array|WP_Error {
     return $file;
 }
 
+function sb_get_server_zip_file(string $filename): array|WP_Error {
+    $filename = sanitize_file_name($filename);
+    if (empty($filename)) {
+        return new WP_Error('missing_filename', 'Kein Dateiname angegeben.');
+    }
+
+    if (!str_ends_with($filename, '.zip')) {
+        return new WP_Error('invalid_extension', 'Nur .zip-Dateien erlaubt.');
+    }
+
+    $upload_dir = wp_upload_dir();
+    $export_dir  = trailingslashit($upload_dir['basedir']) . 'sb-exports';
+    $file_path  = $export_dir . '/' . $filename;
+
+    if (!file_exists($file_path)) {
+        return new WP_Error('file_not_found', "Datei nicht gefunden: {$filename}");
+    }
+
+    if (!is_readable($file_path)) {
+        return new WP_Error('file_not_readable', "Datei nicht lesbar: {$filename}");
+    }
+
+    return [
+        'name'     => $filename,
+        'tmp_name' => $file_path,
+        'type'    => 'application/zip',
+        'error'   => 0,
+    ];
+}
+
+function sb_chunk_upload_init(string $filename, int $total_chunks): array|WP_Error {
+    $filename = sanitize_file_name($filename);
+    if (empty($filename)) {
+        return new WP_Error('missing_filename', 'Kein Dateiname.');
+    }
+
+    $upload_dir = wp_upload_dir();
+    $chunk_dir = $upload_dir['basedir'] . '/sb-chunks/' . $filename;
+    wp_mkdir_p($chunk_dir);
+
+    return [
+        'chunk_dir'  => $chunk_dir,
+        'total'     => $total_chunks,
+        'filename'  => $filename,
+    ];
+}
+
+function sb_chunk_upload_append(string $filename, int $chunk_index, string $chunk_data): true|WP_Error {
+    $filename = sanitize_file_name($filename);
+    $chunk_dir = wp_upload_dir()['basedir'] . '/sb-chunks/' . $filename;
+    $chunk_file = $chunk_dir . '/part-' . $chunk_index;
+
+    if (!is_dir($chunk_dir)) {
+        return new WP_Error('chunk_dir_missing', 'Chunk-Verzeichnis nicht gefunden.');
+    }
+
+    $data = base64_decode($chunk_data);
+    if ($data === false || strlen($data) < 1024) {
+        return new WP_Error('invalid_chunk', 'Ungültiger Chunk.');
+    }
+
+    if (file_put_contents($chunk_file, $data) === false) {
+        return new WP_Error('write_failed', 'Chunk konnte nicht geschrieben werden.');
+    }
+
+    return true;
+}
+
+function sb_chunk_upload_merge(string $filename, int $total_chunks): array|WP_Error {
+    $filename = sanitize_file_name($filename);
+    $chunk_dir = wp_upload_dir()['basedir'] . '/sb-chunks/' . $filename;
+    $upload_dir = wp_upload_dir();
+    $final_dir = $upload_dir['basedir'] . '/sb-exports';
+    wp_mkdir_p($final_dir);
+
+    $final_file = $final_dir . '/' . $filename;
+    $final_handle = fopen($final_file, 'wb');
+    if (!$final_handle) {
+        return new WP_Error('merge_failed', 'Konnte Zieldatei nicht erstellen.');
+    }
+
+    for ($i = 0; $i < $total_chunks; $i++) {
+        $chunk_file = $chunk_dir . '/part-' . $i;
+        if (!file_exists($chunk_file)) {
+            fclose($final_handle);
+            return new WP_Error('chunk_missing', "Chunk {$i} fehlt.");
+        }
+
+        $chunk_data = file_get_contents($chunk_file);
+        if ($chunk_data === false) {
+            fclose($final_handle);
+            return new WP_Error('chunk_read_failed', "Chunk {$i} konnte nicht gelesen werden.");
+        }
+
+        fwrite($final_handle, $chunk_data);
+        @unlink($chunk_file);
+    }
+
+    fclose($final_handle);
+    @rmdir($chunk_dir);
+
+    if (!file_exists($final_file)) {
+        return new WP_Error('merge_incomplete', 'Zusammenführung fehlgeschlagen.');
+    }
+
+    return [
+        'tmp_name' => $final_file,
+        'name'    => $filename,
+        'type'   => 'application/zip',
+        'error'  => 0,
+    ];
+}
+
 add_action('wp_ajax_sb_peek_manifest', 'sb_ajax_peek_manifest');
 function sb_ajax_peek_manifest(): void {
     check_ajax_referer('sb_peek_manifest', 'nonce');
@@ -234,7 +347,13 @@ function sb_ajax_peek_manifest(): void {
         wp_send_json_error(['message' => 'Nicht autorisiert.'], 403);
     }
 
-    $file = sb_get_uploaded_zip_file('sb_zip');
+    $server_filename = $_POST['sb_zip_file'] ?? '';
+    if (!empty($server_filename)) {
+        $file = sb_get_server_zip_file($server_filename);
+    } else {
+        $file = sb_get_uploaded_zip_file('sb_zip');
+    }
+
     if (is_wp_error($file)) {
         wp_send_json_error(['message' => $file->get_error_message()]);
     }
@@ -268,6 +387,97 @@ function sb_ajax_peek_manifest(): void {
     wp_send_json_success(['post_types' => $post_types]);
 }
 
+add_action('wp_ajax_sb_chunk_init', 'sb_ajax_chunk_init');
+function sb_ajax_chunk_init(): void {
+    check_ajax_referer('sb_import', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Nicht autorisiert.'], 403);
+    }
+
+    $filename    = sanitize_file_name($_POST['filename'] ?? '');
+    $totalChunks = absint($_POST['total_chunks'] ?? 0);
+
+    if (empty($filename) || !$totalChunks) {
+        wp_send_json_error(['message' => 'Filename und total_chunks erforderlich.']);
+    }
+
+    if (!str_ends_with($filename, '.zip')) {
+        wp_send_json_error(['message' => 'Nur .zip erlaubt.']);
+    }
+
+    $result = sb_chunk_upload_init($filename, $totalChunks);
+    if (is_wp_error($result)) {
+        wp_send_json_error(['message' => $result->get_error_message()]);
+    }
+
+    wp_send_json_success([
+        'chunk_dir' => $result['chunk_dir'],
+        'total'   => $result['total'],
+    ]);
+}
+
+add_action('wp_ajax_sb_chunk_append', 'sb_ajax_chunk_append');
+function sb_ajax_chunk_append(): void {
+    check_ajax_referer('sb_import', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Nicht autorisiert.'], 403);
+    }
+
+    $filename    = sanitize_file_name($_POST['filename'] ?? '');
+    $chunkIndex = absint($_POST['chunk_index'] ?? -1);
+    $chunkData  = $_POST['chunk_data'] ?? '';
+
+    if (empty($filename) || $chunkIndex < 0 || empty($chunkData)) {
+        wp_send_json_error(['message' => 'filename, chunk_index und chunk_data erforderlich.']);
+    }
+
+    $result = sb_chunk_upload_append($filename, $chunkIndex, $chunkData);
+    if (is_wp_error($result)) {
+        wp_send_json_error(['message' => $result->get_error_message()]);
+    }
+
+    wp_send_json_success(['ok' => true, 'chunk' => $chunkIndex]);
+}
+
+add_action('wp_ajax_sb_chunk_merge', 'sb_ajax_chunk_merge');
+function sb_ajax_chunk_merge(): void {
+    check_ajax_referer('sb_import', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Nicht autorisiert.'], 403);
+    }
+
+    $filename    = sanitize_file_name($_POST['filename'] ?? '');
+    $totalChunks = absint($_POST['total_chunks'] ?? 0);
+
+    if (empty($filename) || !$totalChunks) {
+        wp_send_json_error(['message' => 'filename und total_chunks erforderlich.']);
+    }
+
+    $file = sb_chunk_upload_merge($filename, $totalChunks);
+    if (is_wp_error($file)) {
+        wp_send_json_error(['message' => $file->get_error_message()]);
+    }
+
+    $_FILES['sb_zip'] = [
+        'name'     => $file['name'],
+        'tmp_name' => $file['tmp_name'],
+        'type'    => $file['type'],
+        'error'    => $file['error'],
+    ];
+
+    $manifest = sb_read_manifest($file['tmp_name']);
+    if (is_wp_error($manifest)) {
+        wp_send_json_error(['message' => $manifest->get_error_message()]);
+    }
+
+    $post_types = $manifest['post_types'] ?? [];
+    if (empty($post_types) && !empty($manifest['posts'])) {
+        $post_types = array_values(array_unique(array_column($manifest['posts'], 'post_type')));
+    }
+
+    wp_send_json_success(['post_types' => $post_types]);
+}
+
 add_action('wp_ajax_sb_import', 'sb_ajax_import');
 function sb_ajax_import() {
     check_ajax_referer('sb_import', 'nonce');
@@ -275,7 +485,13 @@ function sb_ajax_import() {
         wp_send_json_error(['message' => 'Nicht autorisiert.'], 403);
     }
 
-    $file = sb_get_uploaded_zip_file('sb_zip');
+    $server_filename = $_POST['sb_zip_file'] ?? '';
+    if (!empty($server_filename)) {
+        $file = sb_get_server_zip_file($server_filename);
+    } else {
+        $file = sb_get_uploaded_zip_file('sb_zip');
+    }
+
     if (is_wp_error($file)) {
         wp_send_json_error(['message' => $file->get_error_message()]);
     }

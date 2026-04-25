@@ -26,13 +26,10 @@ function sb_collect_attachment_names(WP_Post $post): array {
         $seen_ids[] = $att_id;
     };
 
-    // 1. Direkt angehängte Medien (post_parent = post_id)
     foreach (get_attached_media('', $post->ID) as $att) {
         $add_attachment($att->ID);
     }
 
-    // 2. Meta-basierte Anhänge (Featured Image, Galerien, etc.)
-    // Filter erlaubt Theme/Plugins eigene Meta-Keys zu registrieren.
     $meta_keys = apply_filters('sb_attachment_meta_keys', ['_thumbnail_id', 'animal_images'], $post);
     foreach ($meta_keys as $key) {
         $value = get_post_meta($post->ID, $key, true);
@@ -50,6 +47,90 @@ function sb_collect_attachment_names(WP_Post $post): array {
 
 function sb_collect_attachments(WP_Post $post): array {
     return sb_collect_attachment_names($post);
+}
+
+function sb_can_convert_webp(): bool {
+    if (function_exists('imagewebp') && function_exists('imagecreatefromjpeg') && function_exists('imagecreatefrompng')) {
+        return true;
+    }
+    return class_exists('Imagick');
+}
+
+function sb_convert_to_webp(string $src_path, int $quality = 80): array {
+    if (!file_exists($src_path)) {
+        return ['success' => false, 'path' => $src_path, 'error' => 'file_not_found'];
+    }
+
+    $ext = strtolower(pathinfo($src_path, PATHINFO_EXTENSION));
+    if (!in_array($ext, ['jpg', 'jpeg', 'png'], true)) {
+        return ['success' => false, 'path' => $src_path, 'error' => 'unsupported_format'];
+    }
+
+    $webp_path = preg_replace('/\.(jpe?g|png)$/i', '.webp', $src_path);
+
+    if (file_exists($webp_path) && filemtime($webp_path) >= filemtime($src_path)) {
+        return [
+            'success' => true,
+            'path' => $webp_path,
+            'converted' => true,
+            'original_size' => filesize($src_path),
+            'webp_size' => filesize($webp_path),
+        ];
+    }
+
+    if (function_exists('imagewebp') && function_exists('imagecreatefromjpeg') && function_exists('imagecreatefrompng')) {
+        $src_img = match ($ext) {
+            'jpg', 'jpeg' => @imagecreatefromjpeg($src_path),
+            'png' => @imagecreatefrompng($src_path),
+            default => null,
+        };
+
+        if (!$src_img) {
+            return ['success' => false, 'path' => $src_path, 'error' => 'gd_load_failed'];
+        }
+
+        imagesavealpha($src_img, true);
+        $result = imagewebp($src_img, $webp_path, $quality);
+        imagedestroy($src_img);
+
+        if (!$result || !file_exists($webp_path)) {
+            return ['success' => false, 'path' => $src_path, 'error' => 'gd_save_failed'];
+        }
+
+        return [
+            'success' => true,
+            'path' => $webp_path,
+            'converted' => true,
+            'original_size' => filesize($src_path),
+            'webp_size' => filesize($webp_path),
+        ];
+    }
+
+    if (class_exists('Imagick')) {
+        try {
+            $imagick = new Imagick($src_path);
+            $imagick->setImageFormat('webp');
+            $imagick->setImageCompressionQuality($quality);
+            $imagick->writeImage($webp_path);
+            $imagick->destroy();
+
+            if (!file_exists($webp_path)) {
+                return ['success' => false, 'path' => $src_path, 'error' => 'imagick_save_failed'];
+            }
+
+            return [
+                'success' => true,
+                'path' => $webp_path,
+                'converted' => true,
+                'original_size' => filesize($src_path),
+                'webp_size' => filesize($webp_path),
+            ];
+        } catch (Exception $e) {
+            return ['success' => false, 'path' => $src_path, 'error' => 'imagick_exception: ' . $e->getMessage()];
+        }
+    }
+
+    return ['success' => false, 'path' => $src_path, 'error' => 'no_converter'];
 }
 
 function sb_create_export_zip(array $manifest, array $posts) {
@@ -88,7 +169,7 @@ function sb_create_export_zip(array $manifest, array $posts) {
     return $zip_path;
 }
 
-function sb_create_export_zips(array $manifest, array $posts, int $max_mb = 50): array|WP_Error {
+function sb_create_export_zips(array $manifest, array $posts, int $max_mb = 50, bool $convert_webp = true): array|WP_Error {
     if (!class_exists('ZipArchive')) {
         return new WP_Error('zip_unavailable', 'ZipArchive nicht verfügbar.');
     }
@@ -104,67 +185,109 @@ function sb_create_export_zips(array $manifest, array $posts, int $max_mb = 50):
     $timestamp = time();
     $zip_paths = [];
     $part      = 1;
-
-    // Prebuilt post data from manifest (avoids re-querying the DB per chunk)
     $manifest_posts = array_values($manifest['posts']);
+    $skip_webp = !$convert_webp || !sb_can_convert_webp();
 
     $make_zip_path = fn() => $export_dir . "sb-export-{$post_type}-{$timestamp}-part{$part}.zip";
 
-    $finalize_chunk = function (string $zip_path, array $chunk_posts_data) use ($manifest): WP_Error|true {
+    $open_zip = function(string $path) {
+        $zip = new ZipArchive();
+        if ($zip->open($path, ZipArchive::CREATE) !== true) {
+            return new WP_Error('zip_open_failed', "ZIP konnte nicht geöffnet werden: {$path}");
+        }
+        return $zip;
+    };
+
+    $finalize_chunk = function($zip, string $zip_path, array $chunk_posts_data, array $converted_files = []) use ($manifest) {
         $chunk_manifest           = $manifest;
         $chunk_manifest['posts']  = $chunk_posts_data;
-        $chunk_manifest['count']  = count($chunk_posts_data);
-        $zip = new ZipArchive();
-        if ($zip->open($zip_path, ZipArchive::CREATE) !== true) {
-            return new WP_Error('zip_open_failed', "manifest.json konnte nicht geschrieben werden.");
+        $chunk_manifest['count'] = count($chunk_posts_data);
+
+        if (!empty($converted_files)) {
+            $chunk_manifest['webp_converted'] = $converted_files;
         }
+
         $zip->addFromString('manifest.json', wp_json_encode($chunk_manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
         $zip->close();
-        return true;
+        return $zip_path;
     };
 
     $zip_path         = $make_zip_path();
+    $zip              = $open_zip($zip_path);
+    if (is_wp_error($zip)) return $zip;
+
     $chunk_posts_data = [];
+    $current_bytes    = 0;
+    $converted_files  = [];
 
     foreach ($posts as $index => $post) {
-        $chunk_posts_data[] = $manifest_posts[$index];
+        $post_manifest = $manifest_posts[$index];
+        $attachments   = $post_manifest['attachments'] ?? [];
 
-        // Open ZIP (CREATE opens existing without truncating; OVERWRITE would truncate)
-        $zip = new ZipArchive();
-        if ($zip->open($zip_path, ZipArchive::CREATE) !== true) {
-            return new WP_Error('zip_open_failed', "ZIP Part {$part} konnte nicht geöffnet werden.");
-        }
+        $att_files  = [];
+        $post_bytes = 0;
+        $post_converted = [];
 
-        // Add only media files — manifest.json is written once per chunk on finalize
-        $attachments = sb_collect_attachment_names($post);
         foreach ($attachments as $att) {
-            if (file_exists($att['file'])) {
-                $zip->addFile($att['file'], 'media/' . $att['relative']);
+            $file = $att['file'] ?? '';
+            if ($file && file_exists($file)) {
+                $file_ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+                $is_image = in_array($file_ext, ['jpg', 'jpeg', 'png'], true);
+
+                if ($is_image && !$skip_webp) {
+                    $webp_result = sb_convert_to_webp($file);
+                    if ($webp_result['success']) {
+                        $webp_path    = $webp_result['path'];
+                        $relative   = preg_replace('/\.(jpe?g|png)$/i', '.webp', $att['relative']);
+
+                        $att_files[] = [
+                            'file'      => $webp_path,
+                            'relative' => $relative,
+                        ];
+                        $post_bytes += $webp_result['webp_size'];
+
+                        $post_converted[] = [
+                            'original'  => $att['relative'],
+                            'webp'      => $relative,
+                            'orig_size' => $webp_result['original_size'],
+                            'webp_size' => $webp_result['webp_size'],
+                        ];
+                        continue;
+                    }
+                }
+
+                $att_files[] = ['file' => $file, 'relative' => $att['relative']];
+                $post_bytes  += filesize($file);
             }
         }
-        $zip->close();
 
-        $current_size = file_exists($zip_path) ? filesize($zip_path) : 0;
+        if (!empty($post_converted)) {
+            $converted_files = array_merge($converted_files, $post_converted);
+        }
 
-        if ($current_size >= $max_bytes) {
-            $result = $finalize_chunk($zip_path, $chunk_posts_data);
-            if (is_wp_error($result)) {
-                return $result;
-            }
-            $zip_paths[]      = $zip_path;
+        if ($current_bytes > 0 && ($current_bytes + $post_bytes) > $max_bytes) {
+            $zip_paths[]      = $finalize_chunk($zip, $zip_path, $chunk_posts_data, $converted_files);
             $part++;
             $chunk_posts_data = [];
-            $zip_path         = $make_zip_path();
+            $current_bytes   = 0;
+            $converted_files = [];
+            $zip_path        = $make_zip_path();
+            $zip             = $open_zip($zip_path);
+            if (is_wp_error($zip)) return $zip;
         }
+
+        foreach ($att_files as $att) {
+            $zip->addFile($att['file'], 'media/' . $att['relative']);
+        }
+
+        $chunk_posts_data[] = $post_manifest;
+        $current_bytes     += $post_bytes;
     }
 
-    // Finalize the last (or only) chunk
     if (!empty($chunk_posts_data)) {
-        $result = $finalize_chunk($zip_path, $chunk_posts_data);
-        if (is_wp_error($result)) {
-            return $result;
-        }
-        $zip_paths[] = $zip_path;
+        $zip_paths[] = $finalize_chunk($zip, $zip_path, $chunk_posts_data, $converted_files);
+    } else {
+        $zip->close();
     }
 
     return $zip_paths;
@@ -179,18 +302,12 @@ function sb_get_export_download_url(string $zip_path): string {
     );
 }
 
-/**
- * Importiert Anhänge und gibt eine Map old_id => new_id zurück.
- * Stellt außerdem Mediathek-Ordner (Taxonomy media_folder) wieder her.
- *
- * @return array<int,int> Map von alter Attachment-ID auf neue ID.
- */
 function sb_import_attachments(int $post_id, array $attachments, string $media_dir): array {
     require_once ABSPATH . 'wp-admin/includes/image.php';
     require_once ABSPATH . 'wp-admin/includes/file.php';
     require_once ABSPATH . 'wp-admin/includes/media.php';
 
-    $id_map = []; // old_id => new_id
+    $id_map = [];
 
     foreach ($attachments as $attachment) {
         $relative = $attachment['relative'] ?? '';
@@ -201,13 +318,12 @@ function sb_import_attachments(int $post_id, array $attachments, string $media_d
 
         $old_id = isset($attachment['id']) ? (int) $attachment['id'] : 0;
 
-        // Bereits vorhanden? → ID-Map trotzdem befüllen
         $existing = get_posts([
             'post_type'      => 'attachment',
             'meta_key'       => '_wp_attached_file',
             'meta_value'     => $relative,
             'numberposts'    => 1,
-            'fields'         => 'ids',
+            'fields'        => 'ids',
         ]);
         if (!empty($existing)) {
             if ($old_id > 0) {
@@ -231,7 +347,6 @@ function sb_import_attachments(int $post_id, array $attachments, string $media_d
             $id_map[$old_id] = $new_id;
         }
 
-        // Mediathek-Ordner (Taxonomy) wiederherstellen
         $folders = $attachment['media_folders'] ?? [];
         if (!empty($folders) && taxonomy_exists('media_folder')) {
             wp_set_object_terms($new_id, $folders, 'media_folder', true);

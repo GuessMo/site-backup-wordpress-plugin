@@ -158,111 +158,206 @@ document.addEventListener('DOMContentLoaded', function () {
     // Init
     loadAllPosts();
 
-    // Import-Form
-    const importForm = document.getElementById('sb-import-form');
+    // Import-Form with Chunked Upload
+    var importForm = document.getElementById('sb-import-form');
+    var CHUNK_SIZE = 10 * 1024 * 1024;
+
+    function doChunkedUpload(file, onManifest) {
+        var result = document.getElementById('sb-import-result');
+        var filename = file.name;
+        var fileSize = file.size;
+        var chunkCount = Math.ceil(fileSize / CHUNK_SIZE);
+        var uploadedChunks = 0;
+
+        result.innerHTML = '<p>Chunked Upload: 0/' + chunkCount + ' Chunks…</p>';
+
+        function uploadNextChunk(index) {
+            var start = index * CHUNK_SIZE;
+            var end = Math.min(start + CHUNK_SIZE, fileSize);
+            var chunk = file.slice(start, end);
+            var reader = new FileReader();
+            reader.onload = function (e) {
+                var base64 = btoa(String.fromCharCode.apply(null, new Uint8Array(e.target.result)));
+                var data = new FormData();
+                data.append('action', 'sb_chunk_append');
+                data.append('nonce', siteBackup.importNonce);
+                data.append('filename', filename);
+                data.append('chunk_index', index);
+                data.append('chunk_data', base64);
+
+                fetch(siteBackup.ajaxUrl, { method: 'POST', body: data })
+                    .then(function (r) { return r.json(); })
+                    .then(function (res) {
+                        if (!res.success) {
+                            result.innerHTML = '<p class="sb-error">Chunk ' + index + ' failed: ' + (res.data && res.data.message || 'Error') + '</p>';
+                            return;
+                        }
+                        uploadedChunks++;
+                        result.innerHTML = '<p>Chunked Upload: ' + uploadedChunks + '/' + chunkCount + ' Chunks…</p>';
+                        if (index + 1 < chunkCount) {
+                            uploadNextChunk(index + 1);
+                        } else {
+                            var mergeData = new FormData();
+                            mergeData.append('action', 'sb_chunk_merge');
+                            mergeData.append('nonce', siteBackup.importNonce);
+                            mergeData.append('filename', filename);
+                            mergeData.append('total_chunks', chunkCount);
+                            fetch(siteBackup.ajaxUrl, { method: 'POST', body: mergeData })
+                                .then(function (r) { return r.json(); })
+                                .then(function (res) {
+                                    if (!res.success) {
+                                        result.innerHTML = '<p class="sb-error">Merge failed: ' + (res.data && res.data.message || 'Error') + '</p>';
+                                        return;
+                                    }
+                                    onManifest(res.data.post_types);
+                                })
+                                .catch(function () {
+                                    result.innerHTML = '<p class="sb-error">Merge network error.</p>';
+                                });
+                        }
+                    })
+                    .catch(function () {
+                        result.innerHTML = '<p class="sb-error">Chunk network error.</p>';
+                    });
+            };
+            reader.readAsArrayBuffer(chunk);
+        }
+
+        var initData = new FormData();
+        initData.append('action', 'sb_chunk_init');
+        initData.append('nonce', siteBackup.importNonce);
+        initData.append('filename', filename);
+        initData.append('total_chunks', chunkCount);
+
+        fetch(siteBackup.ajaxUrl, { method: 'POST', body: initData })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                if (!res.success) {
+                    result.innerHTML = '<p class="sb-error">Init failed: ' + (res.data && res.data.message || 'Error') + '</p>';
+                    return;
+                }
+                uploadNextChunk(0);
+            })
+            .catch(function () {
+                result.innerHTML = '<p class="sb-error">Init network error.</p>';
+            });
+    }
+
     if (importForm) {
         importForm.addEventListener('submit', function (e) {
             e.preventDefault();
-            const result = document.getElementById('sb-import-result');
+            var result = document.getElementById('sb-import-result');
 
-            const zipFile = importForm.querySelector('input[name="sb_zip"]');
-            if (!zipFile || !zipFile.files.length) {
-                result.innerHTML = '<p class="sb-error">Bitte eine ZIP-Datei auswählen.</p>';
+            var zipFile = importForm.querySelector('input[name="sb_zip"]');
+            var serverFile = importForm.querySelector('input[name="sb_zip_file"]');
+
+            if ((!zipFile || !zipFile.files.length) && (!serverFile || !serverFile.value)) {
+                result.innerHTML = '<p class="sb-error">Bitte ZIP-Datei auswählen.</p>';
                 return;
             }
 
-            result.innerHTML = '<p>Import läuft…</p>';
+            if (serverFile && serverFile.value) {
+                result.innerHTML = '<p>Importiere vom Server…</p>';
+                var data = new FormData(importForm);
+                data.append('action', 'sb_import');
+                data.append('nonce', siteBackup.importNonce);
+                data.set('sb_zip_file', serverFile.value);
+                data.delete('sb_zip');
 
-            const data = new FormData(importForm);
-            data.append('action', 'sb_import');
-            data.append('nonce', siteBackup.importNonce);
+                fetch(siteBackup.ajaxUrl, { method: 'POST', body: data })
+                    .then(function (r) { return r.json(); })
+                    .then(function (res) {
+                        if (!res.success) {
+                            result.innerHTML = '<p class="sb-error">Fehler: ' + (res.data && res.data.message || 'Unbekannter Fehler') + '</p>';
+                            return;
+                        }
+                        showImportResult(result, res.data);
+                    })
+                    .catch(function () {
+                        result.innerHTML = '<p class="sb-error">Netzwerkfehler.</p>';
+                    });
+            } else {
+                var file = zipFile.files[0];
+                if (file.size > CHUNK_SIZE) {
+                    doChunkedUpload(file, function (postTypes) {
+                        showCptMapping(postTypes);
+                    });
+                } else {
+                    result.innerHTML = '<p>Import läuft…</p>';
+                    var data = new FormData(importForm);
+                    data.append('action', 'sb_import');
+                    data.append('nonce', siteBackup.importNonce);
 
-            fetch(siteBackup.ajaxUrl, { method: 'POST', body: data })
-                .then(r => r.json())
-                .then(function (res) {
-                    if (!res.success) {
-                        result.innerHTML = '<p class="sb-error">Fehler: ' + (res.data?.message || 'Unbekannter Fehler') + '</p>';
-                        return;
-                    }
-                    const d = res.data;
-                    const summary = '<p class="sb-success"><strong>Erstellt: ' + d.created.length +
-                        ' | Aktualisiert: ' + d.updated.length +
-                        ' | Übersprungen: ' + d.skipped.length + '</strong></p>';
-                    const makeList = (label, items) => items.length
-                        ? '<details><summary>' + label + ' (' + items.length + ')</summary><ul>' +
-                          items.map(t => '<li>' + t + '</li>').join('') + '</ul></details>'
-                        : '';
-                    result.innerHTML = summary
-                        + makeList('Erstellt', d.created)
-                        + makeList('Aktualisiert', d.updated)
-                        + makeList('Übersprungen', d.skipped)
-                        + makeList('Übersprungen (Mapping)', d.skipped_mapped || [])
-                        + makeList('Übersprungen (CPT fehlt)', d.skipped_no_cpt || [])
-                        + (d.errors?.length ? makeList('Fehler', d.errors) : '');
-                })
-                .catch(function () {
-                    result.innerHTML = '<p class="sb-error">Netzwerkfehler beim Import.</p>';
-                });
+                    fetch(siteBackup.ajaxUrl, { method: 'POST', body: data })
+                        .then(function (r) { return r.json(); })
+                        .then(function (res) {
+                            if (!res.success) {
+                                result.innerHTML = '<p class="sb-error">Fehler: ' + (res.data && res.data.message || 'Unbekannter Fehler') + '</p>';
+                                return;
+                            }
+                            showImportResult(result, res.data);
+                        })
+                        .catch(function () {
+                            result.innerHTML = '<p class="sb-error">Netzwerkfehler.</p>';
+                        });
+                }
+            }
         });
+    }
+
+    function showImportResult(result, d) {
+        var summary = '<p class="sb-success"><strong>Erstellt: ' + d.created.length + ' | Aktualisiert: ' + d.updated.length + ' | Übersprungen: ' + d.skipped.length + '</strong></p>';
+        var makeList = function (label, items) {
+            return items.length
+                ? '<details><summary>' + label + ' (' + items.length + ')</summary><ul>' + items.map(function (t) { return '<li>' + t + '</li>'; }).join('') + '</ul></details>'
+                : '';
+        };
+        result.innerHTML = summary
+            + makeList('Erstellt', d.created)
+            + makeList('Aktualisiert', d.updated)
+            + makeList('Übersprungen', d.skipped)
+            + makeList('Übersprungen (Mapping)', d.skipped_mapped || [])
+            + makeList('Übersprungen (CPT)', d.skipped_no_cpt || [])
+            + (d.errors && d.errors.length ? makeList('Fehler', d.errors) : '');
+    }
+
+    function showCptMapping(postTypes) {
+        var cptMappingDiv = document.getElementById('sb-cpt-mapping');
+        var cptMapTable = document.getElementById('sb-cpt-map-table');
+        if (!cptMappingDiv || !cptMapTable || !postTypes || !postTypes.length) return;
+
+        var available = (siteBackup.availableCpts || []);
+        var availableNames = available.map(function (c) { return c.name; });
+
+        var rows = postTypes.map(function (srcType) {
+            var exists = availableNames.indexOf(srcType) !== -1;
+            var options = available.map(function (c) {
+                return '<option value="' + c.name + '"' + (c.name === srcType ? ' selected' : '') + '>' + c.label + ' (' + c.name + ')</option>';
+            }).join('');
+            return '<tr' + (!exists ? ' class="sb-cpt-missing"' : '') + '>'
+                + '<td><code>' + srcType + '</code>' + (!exists ? ' <span style="color:#d63638;">⚇ nicht gefunden</span>' : '') + '</td>'
+                + '<td><select name="cpt_map[' + srcType + ']" class="' + (!exists ? 'sb-cpt-missing' : '') + '">' + options + '<option value="skip">— Überspringen —</option></select></td>'
+                + '</tr>';
+        }).join('');
+
+        cptMapTable.querySelector('tbody').innerHTML = rows;
+        cptMappingDiv.style.display = 'block';
     }
 
     // ── CPT-MAPPING (Import) ──────────────────────────────────────────────────────
-    const zipInput      = document.querySelector('#sb-tab-import input[type="file"][name="sb_zip"]');
-    const cptMappingDiv = document.getElementById('sb-cpt-mapping');
-    const cptMapTable   = document.getElementById('sb-cpt-map-table');
+    var zipInput = document.querySelector('#sb-tab-import input[type="file"][name="sb_zip"]');
+    var serverZipInput = document.querySelector('#sb-tab-import input[name="sb_zip_file"]');
+    var cptMappingDiv = document.getElementById('sb-cpt-mapping');
+    var cptMapTable = document.getElementById('sb-cpt-map-table');
 
-    if (zipInput && cptMappingDiv && cptMapTable) {
-        zipInput.addEventListener('change', function () {
-            if (!this.files.length) {
-                cptMappingDiv.style.display = 'none';
-                return;
-            }
+    function doPeek(fileOrPath) {
+        if (!cptMappingDiv || !cptMapTable) return;
 
-            const data = new FormData();
-            data.append('action', 'sb_peek_manifest');
-            data.append('nonce', siteBackup.peekNonce);
-            data.append('sb_zip', this.files[0]);
-
-            cptMappingDiv.style.display = 'none';
-            cptMapTable.querySelector('tbody').innerHTML = '<tr><td colspan="2">Lese ZIP…</td></tr>';
-
-            fetch(siteBackup.ajaxUrl, { method: 'POST', body: data })
-                .then(r => r.json())
-                .then(function (res) {
-                    if (!res.success || !res.data.post_types || !res.data.post_types.length) {
-                        return;
-                    }
-                    const available = (siteBackup.availableCpts || []);
-                    const availableNames = available.map(c => c.name);
-
-                    const rows = res.data.post_types.map(function (srcType) {
-                        const exists = availableNames.includes(srcType);
-                        const options = available.map(c =>
-                            '<option value="' + c.name + '"' + (c.name === srcType ? ' selected' : '') + '>'
-                            + c.label + ' (' + c.name + ')'
-                            + '</option>'
-                        ).join('');
-                        return '<tr' + (!exists ? ' class="sb-cpt-missing"' : '') + '>'
-                            + '<td><code>' + srcType + '</code>'
-                            + (!exists ? ' <span style="color:#d63638;">&#9888; nicht gefunden</span>' : '')
-                            + '</td>'
-                            + '<td><select name="cpt_map[' + srcType + ']" class="' + (!exists ? 'sb-cpt-missing' : '') + '">'
-                            + options
-                            + '<option value="skip">— Überspringen —</option>'
-                            + '</select></td>'
-                            + '</tr>';
-                    }).join('');
-
-                    cptMapTable.querySelector('tbody').innerHTML = rows;
-                    cptMappingDiv.style.display = 'block';
-                })
-                .catch(function () {
-                    // kein Peek möglich → still ignorieren, Import läuft ohne Mapping
-                });
-        });
-    }
-
-    // ── USERS ────────────────────────────────────────────────────────────────────
+        cptMappingDiv.style.display = 'none';
+        cptMapTable.querySelector('tbody').innerHTML = '<tr><td colspan="2">Lese ZIP…</td></tr>';
+        var data = new FormData();
+        data.append('action', 'sb_peek_manifest');
+        data.append('nonce', siteBackup.peekNonce);
     const exportUsersBtn    = document.getElementById('sb-export-users-btn');
     const exportUsersResult = document.getElementById('sb-export-users-result');
     const usersRoleSelect   = document.getElementById('sb-users-role');
