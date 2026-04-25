@@ -458,7 +458,12 @@ function sb_ajax_chunk_merge() {
         'error'   => $file['error'],
     );
 
-    $manifest = sb_read_manifest($file['tmp_name']);
+    $manifest = sb_extract_zip($file['tmp_name']);
+    if (is_wp_error($manifest)) {
+        wp_send_json_error(array('message' => 'ZIP konnte nicht entpackt werden: ' . $manifest->get_error_message()));
+    }
+
+    $manifest = sb_read_manifest($manifest);
     if (is_wp_error($manifest)) {
         wp_send_json_error(array('message' => $manifest->get_error_message()));
     }
