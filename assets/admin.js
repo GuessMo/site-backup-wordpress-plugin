@@ -113,13 +113,13 @@ document.addEventListener('DOMContentLoaded', function () {
         exportForm.addEventListener('submit', function (e) {
             e.preventDefault();
 
-            var postsPerZip = 10;
-            var postsPerZipInput = exportForm.querySelector('#sb-posts-per-zip');
-            if (postsPerZipInput && postsPerZipInput.value) {
-                postsPerZip = parseInt(postsPerZipInput.value, 10) || 10;
-                if (postsPerZip < 1) postsPerZip = 1;
-                if (postsPerZip > 50) postsPerZip = 50;
-            }
+var postsPerZip = 10;
+    var postsPerZipInput = exportForm.querySelector('#sb-posts-per-zip');
+    if (postsPerZipInput && postsPerZipInput.value) {
+    postsPerZip = parseInt(postsPerZipInput.value, 10) || 10;
+    if (postsPerZip < 0) postsPerZip = 10;
+    if (postsPerZip > 50) postsPerZip = 50;
+    }
 
             var selectedPosts = postGroups.querySelectorAll('input[name="post_ids[]"]:checked');
             if (!selectedPosts.length) {
