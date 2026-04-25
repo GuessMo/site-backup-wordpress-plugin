@@ -49,11 +49,17 @@ document.addEventListener('DOMContentLoaded', function () {
             .then(r => r.json())
             .then(function (res) {
                 if (loadingLabel) loadingLabel.style.display = 'none';
-                if (!res.success || !Object.keys(res.data).length) {
+                if (!res.success) {
+                    postGroups.innerHTML = '<p class="sb-error">Fehler: ' + (res.data && res.data.message || 'Unbekannter Fehler') + '</p>';
+                    return;
+                }
+                if (!res.data || !Object.keys(res.data).length) {
                     postGroups.innerHTML = '<p>Keine Posts gefunden.</p>';
                     return;
                 }
-                Object.entries(res.data).forEach(function ([type, group]) {
+                Object.entries(res.data).forEach(function (entry) {
+                    var type = entry[0];
+                    var group = entry[1];
                     const details = document.createElement('details');
                     details.className = 'sb-pt-group';
                     details.open = true;
@@ -99,9 +105,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 updateCount();
             })
-            .catch(function () {
+            .catch(function (err) {
                 if (loadingLabel) loadingLabel.style.display = 'none';
-                postGroups.innerHTML = '<p class="sb-error">Fehler beim Laden der Posts.</p>';
+                console.error('Load posts error:', err);
+                postGroups.innerHTML = '<p class="sb-error">Fehler beim Laden der Posts. Bitte Console prüfen.</p>';
             });
     }
 
