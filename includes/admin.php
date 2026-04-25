@@ -17,8 +17,8 @@ function sb_register_admin_page() {
 add_action('admin_enqueue_scripts', 'sb_enqueue_admin_assets');
 function sb_enqueue_admin_assets($hook) {
     if ($hook !== 'toplevel_page_site-backup') return;
-    wp_enqueue_style('sb-admin', plugin_dir_url(dirname(__FILE__)) . 'assets/admin.css', array(), '0.1.0');
-    wp_enqueue_script('sb-admin', plugin_dir_url(dirname(__FILE__)) . 'assets/admin.js', array(), '0.1.0', true);
+    wp_enqueue_style('sb-admin', plugin_dir_url(dirname(__FILE__)) . 'assets/admin.css', array(), POST_MIGRATOR_VERSION);
+    wp_enqueue_script('sb-admin', plugin_dir_url(dirname(__FILE__)) . 'assets/admin.js', array(), POST_MIGRATOR_VERSION, true);
 
     $cpt_blacklist = array(
         'attachment', 'revision', 'nav_menu_item', 'custom_css',
