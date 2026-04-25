@@ -208,7 +208,12 @@ document.addEventListener('DOMContentLoaded', function () {
             var chunk = file.slice(start, end);
             var reader = new FileReader();
             reader.onload = function (e) {
-                var base64 = btoa(String.fromCharCode.apply(null, new Uint8Array(e.target.result)));
+                var bytes = new Uint8Array(e.target.result);
+                var binary = '';
+                for (var i = 0; i < bytes.length; i++) {
+                    binary += String.fromCharCode(bytes[i]);
+                }
+                var base64 = btoa(binary);
                 var data = new FormData();
                 data.append('action', 'sb_chunk_append');
                 data.append('nonce', siteBackup.importNonce);
