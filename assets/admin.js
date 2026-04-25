@@ -200,7 +200,11 @@ document.addEventListener('DOMContentLoaded', function () {
         var chunkCount = Math.ceil(fileSize / CHUNK_SIZE);
         var uploadedChunks = 0;
 
-        result.innerHTML = '<p>Chunked Upload: 0/' + chunkCount + ' Chunks…</p>';
+        var chunkStatus = result.querySelector('.sb-chunk-status');
+        if (!chunkStatus) {
+            result.innerHTML += '<p class="sb-chunk-status">Chunked Upload: 0/' + chunkCount + ' Chunks…</p>';
+            chunkStatus = result.querySelector('.sb-chunk-status');
+        }
 
         function uploadNextChunk(index) {
             var start = index * CHUNK_SIZE;
@@ -229,7 +233,10 @@ document.addEventListener('DOMContentLoaded', function () {
                             return;
                         }
                         uploadedChunks++;
-                        result.innerHTML = '<p>Chunked Upload: ' + uploadedChunks + '/' + chunkCount + ' Chunks…</p>';
+                        var chunkStatus = result.querySelector('.sb-chunk-status');
+                        if (chunkStatus) {
+                            chunkStatus.textContent = 'Chunked Upload: ' + uploadedChunks + '/' + chunkCount + ' Chunks…';
+                        }
                         if (index + 1 < chunkCount) {
                             uploadNextChunk(index + 1);
                         } else {
@@ -484,6 +491,15 @@ document.addEventListener('DOMContentLoaded', function () {
         cptMapTable.querySelector('tbody').innerHTML = rows;
 
         if (!postTypes || !postTypes.length) {
+            if (onConfirm) onConfirm();
+            return;
+        }
+
+        var hasConflict = postTypes.some(function(srcType) {
+            return availableNames.indexOf(srcType) === -1;
+        });
+
+        if (!hasConflict) {
             if (onConfirm) onConfirm();
             return;
         }
