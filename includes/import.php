@@ -106,8 +106,9 @@ function sb_import_single_post(array $post_data, $target_type, $collision, $medi
     }
 
     $id_map = array();
+    $force_attachments = ($collision === 'override');
     if (!empty($post_data['attachments'])) {
-        $id_map = sb_import_attachments($post_id, $post_data['attachments'], $media_dir);
+        $id_map = sb_import_attachments($post_id, $post_data['attachments'], $media_dir, $force_attachments);
     }
 
     // Update image URLs in post_content with new attachment URLs

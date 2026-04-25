@@ -300,7 +300,7 @@ function sb_get_export_download_url($zip_path) {
     );
 }
 
-function sb_import_attachments($post_id, array $attachments, $media_dir) {
+function sb_import_attachments($post_id, array $attachments, $media_dir, $force_reimport = false) {
     require_once ABSPATH . 'wp-admin/includes/image.php';
     require_once ABSPATH . 'wp-admin/includes/file.php';
     require_once ABSPATH . 'wp-admin/includes/media.php';
@@ -311,11 +311,18 @@ function sb_import_attachments($post_id, array $attachments, $media_dir) {
         $relative = isset($attachment['relative']) ? $attachment['relative'] : '';
         if (empty($relative)) continue;
 
-        $file = trailingslashit($media_dir) . 'media/' . $relative;
-        if (!file_exists($file)) continue;
+        // Skip non-image files - only import images
+        $ext = strtolower(pathinfo($relative, PATHINFO_EXTENSION));
+        if (!in_array($ext, array('jpg', 'jpeg', 'png', 'gif', 'webp'), true)) {
+            continue;
+        }
+
+        $source_file = trailingslashit($media_dir) . 'media/' . $relative;
+        if (!file_exists($source_file)) continue;
 
         $old_id = isset($attachment['id']) ? (int) $attachment['id'] : 0;
 
+        // Find existing attachment by relative path
         $existing = get_posts(array(
             'post_type'   => 'attachment',
             'meta_key'    => '_wp_attached_file',
@@ -323,16 +330,74 @@ function sb_import_attachments($post_id, array $attachments, $media_dir) {
             'numberposts' => 1,
             'fields'      => 'ids',
         ));
+
         if (!empty($existing)) {
-            if ($old_id > 0) {
-                $id_map[$old_id] = (int) $existing[0];
+            if ($force_reimport) {
+                // Delete existing attachment and its files
+                $existing_id = (int) $existing[0];
+                $existing_att = get_post($existing_id);
+                if ($existing_att) {
+                    // Get attached file path
+                    $attached_file = get_post_meta($existing_id, '_wp_attached_file', true);
+                    if ($attached_file) {
+                        $upload_dir = wp_upload_dir();
+                        $file_path = trailingslashit($upload_dir['basedir']) . $attached_file;
+                        if (file_exists($file_path)) {
+                            @unlink($file_path);
+                        }
+                        // Try to delete resized versions
+                        $dir = dirname($file_path);
+                        $base = basename($file_path, '.' . pathinfo($file_path, PATHINFO_EXTENSION));
+                        foreach (glob($dir . '/' . $base . '-*.jpg') as $thumb) {
+                            @unlink($thumb);
+                        }
+                        foreach (glob($dir . '/' . $base . '-*.jpeg') as $thumb) {
+                            @unlink($thumb);
+                        }
+                        foreach (glob($dir . '/' . $base . '-*.png') as $thumb) {
+                            @unlink($thumb);
+                        }
+                        foreach (glob($dir . '/' . $base . '-*.webp') as $thumb) {
+                            @unlink($thumb);
+                        }
+                    }
+                }
+                wp_delete_attachment($existing_id, true);
+                $existing = array();
+            } else {
+                if ($old_id > 0) {
+                    $id_map[$old_id] = (int) $existing[0];
+                }
+                continue;
             }
-            continue;
+        }
+
+        // Convert to WebP if not already WebP
+        $final_file = $source_file;
+        if ($ext !== 'webp') {
+            $webp_path = preg_replace('/\.(jpe?g|png)$/i', '.webp', $source_file);
+            if (function_exists('imagewebp') || class_exists('Imagick')) {
+                $image = null;
+                if (extension_loaded('gd')) {
+                    $image = imagecreatefromstring(file_get_contents($source_file));
+                } elseif (class_exists('Imagick')) {
+                    $image = new Imagick($source_file);
+                }
+                if ($image) {
+                    $quality = apply_filters('sb_webp_quality', 80);
+                    if (imagewebp($image, $webp_path, $quality)) {
+                        imagedestroy($image);
+                        $final_file = $webp_path;
+                        // Delete original non-WebP file after successful conversion
+                        @unlink($source_file);
+                    }
+                }
+            }
         }
 
         $file_array = array(
-            'name'     => basename($file),
-            'tmp_name' => $file,
+            'name'     => basename($final_file),
+            'tmp_name' => $final_file,
         );
         $new_id = media_handle_sideload($file_array, $post_id);
 
