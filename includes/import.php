@@ -110,6 +110,25 @@ function sb_import_single_post(array $post_data, $target_type, $collision, $medi
         $id_map = sb_import_attachments($post_id, $post_data['attachments'], $media_dir);
     }
 
+    // Update image URLs in post_content with new attachment URLs
+    if (!empty($id_map) && !empty($post_data['post_content'])) {
+        $content = $post_data['post_content'];
+        
+        // Remove blob: URLs - these are invalid and shouldn't be in content
+        $content = preg_replace('/blob:[^\s"<>]+/', '', $content);
+        
+        // Replace old attachment IDs with new ones in HTML
+        foreach ($id_map as $old_id => $new_id) {
+            // Replace wp-image-XX class references
+            $content = str_replace('wp-image-' . $old_id, 'wp-image-' . $new_id, $content);
+            // Replace attachment_id=XX in links
+            $content = str_replace('attachment_id=' . $old_id, 'attachment_id=' . $new_id, $content);
+        }
+        
+        // Update the post with cleaned content
+        wp_update_post(array('ID' => $post_id, 'post_content' => $content));
+    }
+
     if (!empty($id_map)) {
         $remap_keys = apply_filters('sb_attachment_meta_keys', array('_thumbnail_id', 'animal_images'), get_post($post_id));
         foreach ($remap_keys as $key) {
