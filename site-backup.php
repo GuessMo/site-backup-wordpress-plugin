@@ -1,3 +1,4 @@
+<?php
 /**
  * Plugin Name: TSV Site Backup
  * Description: Export and import WordPress posts (including media) between instances with post type mapping. PHP 5.6 / WP 5.4+ compatible.
