@@ -4,13 +4,13 @@ if (!defined('ABSPATH')) exit;
 // ── EXPORT ───────────────────────────────────────────────────────────────────
 
 add_action('wp_ajax_sb_export_users', 'sb_ajax_export_users');
-function sb_ajax_export_users(): void {
+function sb_ajax_export_users() {
     check_ajax_referer('sb_export_users', 'nonce');
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => 'Nicht autorisiert.'], 403);
     }
 
-    $role = sanitize_key($_POST['role'] ?? '');
+    $role = isset($_POST['role']) ? sanitize_key($_POST['role']) : '';
 
     $args = ['number' => -1];
     if (!empty($role)) {
@@ -76,7 +76,7 @@ function sb_ajax_export_users(): void {
 // ── IMPORT ───────────────────────────────────────────────────────────────────
 
 add_action('wp_ajax_sb_import_users', 'sb_ajax_import_users');
-function sb_ajax_import_users(): void {
+function sb_ajax_import_users() {
     check_ajax_referer('sb_import_users', 'nonce');
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => 'Nicht autorisiert.'], 403);
@@ -112,10 +112,12 @@ function sb_ajax_import_users(): void {
     $has_new = false;
 
     foreach ($manifest['users'] as $u) {
-        $email    = sanitize_email($u['user_email'] ?? '');
-        $login    = sanitize_user($u['user_login'] ?? '');
-        $display  = sanitize_text_field($u['display_name'] ?? $login);
-        $roles    = array_map('sanitize_key', (array) ($u['roles'] ?? ['subscriber']));
+        $email    = isset($u['user_email']) ? sanitize_email($u['user_email']) : '';
+        $login    = isset($u['user_login']) ? sanitize_user($u['user_login']) : '';
+        $display_val = isset($u['display_name']) ? $u['display_name'] : $login;
+        $display  = sanitize_text_field($display_val);
+        $roles_arr = isset($u['roles']) ? $u['roles'] : array('subscriber');
+        $roles    = array_map('sanitize_key', (array) $roles_arr);
         $primary  = $roles[0];
 
         $existing_id = email_exists($email);

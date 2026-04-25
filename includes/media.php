@@ -7,7 +7,7 @@ function sb_collect_attachment_names(WP_Post $post): array {
     $result     = [];
     $seen_ids   = [];
 
-    $add_attachment = function (int $att_id) use ($base_dir, &$result, &$seen_ids): void {
+    $add_attachment = function ($att_id) use ($base_dir, &$result, &$seen_ids) {
         if ($att_id <= 0 || in_array($att_id, $seen_ids, true)) return;
         $file = get_attached_file($att_id);
         if (!$file || !file_exists($file)) return;
@@ -169,7 +169,7 @@ function sb_create_export_zip(array $manifest, array $posts) {
     return $zip_path;
 }
 
-function sb_create_export_zips(array $manifest, array $posts, int $max_mb = 50, bool $convert_webp = true): array|WP_Error {
+function sb_create_export_zips(array $manifest, array $posts, int $max_mb = 50, bool $convert_webp = false): array|WP_Error {
     if (!class_exists('ZipArchive')) {
         return new WP_Error('zip_unavailable', 'ZipArchive nicht verfügbar.');
     }
@@ -181,7 +181,8 @@ function sb_create_export_zips(array $manifest, array $posts, int $max_mb = 50, 
     }
 
     $max_bytes = $max_mb * 1024 * 1024;
-    $post_type = sanitize_key($manifest['post_type'] ?? ($manifest['post_types'][0] ?? 'export'));
+    $post_type_val = isset($manifest['post_type']) ? $manifest['post_type'] : (isset($manifest['post_types'][0]) ? $manifest['post_types'][0] : 'export');
+    $post_type = sanitize_key($post_type_val);
     $timestamp = time();
     $zip_paths = [];
     $part      = 1;
@@ -222,14 +223,14 @@ function sb_create_export_zips(array $manifest, array $posts, int $max_mb = 50, 
 
     foreach ($posts as $index => $post) {
         $post_manifest = $manifest_posts[$index];
-        $attachments   = $post_manifest['attachments'] ?? [];
+        $attachments   = isset($post_manifest['attachments']) ? $post_manifest['attachments'] : array();
 
-        $att_files  = [];
+        $att_files  = array();
         $post_bytes = 0;
-        $post_converted = [];
+        $post_converted = array();
 
         foreach ($attachments as $att) {
-            $file = $att['file'] ?? '';
+            $file = isset($att['file']) ? $att['file'] : '';
             if ($file && file_exists($file)) {
                 $file_ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
                 $is_image = in_array($file_ext, ['jpg', 'jpeg', 'png'], true);
@@ -307,10 +308,10 @@ function sb_import_attachments(int $post_id, array $attachments, string $media_d
     require_once ABSPATH . 'wp-admin/includes/file.php';
     require_once ABSPATH . 'wp-admin/includes/media.php';
 
-    $id_map = [];
+    $id_map = array();
 
     foreach ($attachments as $attachment) {
-        $relative = $attachment['relative'] ?? '';
+        $relative = isset($attachment['relative']) ? $attachment['relative'] : '';
         if (empty($relative)) continue;
 
         $file = trailingslashit($media_dir) . 'media/' . $relative;
@@ -347,7 +348,7 @@ function sb_import_attachments(int $post_id, array $attachments, string $media_d
             $id_map[$old_id] = $new_id;
         }
 
-        $folders = $attachment['media_folders'] ?? [];
+        $folders = isset($attachment['media_folders']) ? $attachment['media_folders'] : array();
         if (!empty($folders) && taxonomy_exists('media_folder')) {
             wp_set_object_terms($new_id, $folders, 'media_folder', true);
         }

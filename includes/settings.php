@@ -56,7 +56,7 @@ function sb_get_all_allowed_keys(): array {
 // ── EXPORT ───────────────────────────────────────────────────────────────────
 
 add_action('wp_ajax_sb_export_settings', 'sb_ajax_export_settings');
-function sb_ajax_export_settings(): void {
+function sb_ajax_export_settings() {
     check_ajax_referer('sb_export_settings', 'nonce');
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => 'Nicht autorisiert.'], 403);
@@ -108,7 +108,7 @@ function sb_ajax_export_settings(): void {
 // ── IMPORT ───────────────────────────────────────────────────────────────────
 
 add_action('wp_ajax_sb_import_settings', 'sb_ajax_import_settings');
-function sb_ajax_import_settings(): void {
+function sb_ajax_import_settings() {
     check_ajax_referer('sb_import_settings', 'nonce');
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => 'Nicht autorisiert.'], 403);

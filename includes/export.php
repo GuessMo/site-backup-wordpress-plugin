@@ -27,7 +27,7 @@ function sb_ajax_get_posts() {
         wp_send_json_error(['message' => 'Nicht autorisiert.'], 403);
     }
 
-    $post_type = sanitize_key($_POST['post_type'] ?? 'post');
+    $post_type = isset($_POST['post_type']) ? sanitize_key($_POST['post_type']) : 'post';
 
     $query = new WP_Query([
         'post_type'      => $post_type,
@@ -53,7 +53,7 @@ function sb_ajax_get_posts() {
 }
 
 add_action('wp_ajax_sb_get_all_posts', 'sb_ajax_get_all_posts');
-function sb_ajax_get_all_posts(): void {
+function sb_ajax_get_all_posts() {
     check_ajax_referer('sb_get_all_posts', 'nonce');
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => 'Nicht autorisiert.'], 403);
@@ -66,8 +66,8 @@ function sb_ajax_get_all_posts(): void {
         'wp_global_styles', 'wp_navigation',
     ];
     $post_types = array_filter(
-        get_post_types(['show_ui' => true], 'objects'),
-        fn($pt) => !in_array($pt->name, $sb_cpt_blacklist, true)
+        get_post_types(array('show_ui' => true), 'objects'),
+        function($pt) { return !in_array($pt->name, $sb_cpt_blacklist, true); }
     );
     $result = [];
 
@@ -114,11 +114,13 @@ function sb_build_manifest(array $posts): array {
         foreach ($taxonomies as $tax) {
             $t = wp_get_object_terms($post->ID, $tax, ['fields' => 'all']);
             if (!is_wp_error($t)) {
-                $terms[$tax] = array_map(fn($term) => [
-                    'term_id' => $term->term_id,
-                    'name'    => $term->name,
-                    'slug'    => $term->slug,
-                ], $t);
+                $terms[$tax] = array_map(function($term) {
+                    return array(
+                        'term_id' => $term->term_id,
+                        'name'    => $term->name,
+                        'slug'    => $term->slug,
+                    );
+                }, $t);
             }
         }
         $attachments = sb_collect_attachment_names($post);
@@ -161,6 +163,37 @@ function sb_ajax_export() {
         wp_send_json_error(['message' => 'Keine Posts ausgewählt.']);
     }
 
+    $posts_per_zip = isset($_POST['posts_per_zip']) ? absint($_POST['posts_per_zip']) : 10;
+    if ($posts_per_zip < 1) $posts_per_zip = 10;
+    if ($posts_per_zip > 50) $posts_per_zip = 50;
+
+    $chunks = array_chunk($post_ids, $posts_per_zip);
+    $total_parts = count($chunks);
+
+    wp_send_json_success([
+        'total_parts' => $total_parts,
+    ]);
+}
+
+add_action('wp_ajax_sb_export_part', 'sb_ajax_export_part');
+function sb_ajax_export_part() {
+    check_ajax_referer('sb_export', 'nonce');
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(['message' => 'Nicht autorisiert.'], 403);
+    }
+
+    $post_ids = [];
+    if (!empty($_POST['post_ids']) && is_array($_POST['post_ids'])) {
+        $post_ids = array_values(array_filter(array_map('absint', $_POST['post_ids'])));
+    }
+
+    if (empty($post_ids)) {
+        wp_send_json_error(['message' => 'Keine Posts ausgewählt.']);
+    }
+
+    $max_mb = isset($_POST['max_mb']) ? absint($_POST['max_mb']) : 50;
+    $max_mb = max(10, min(500, $max_mb));
+
     $posts = get_posts([
         'post__in'       => $post_ids,
         'post_type'      => 'any',
@@ -170,11 +203,7 @@ function sb_ajax_export() {
     ]);
 
     $manifest = sb_build_manifest($posts);
-
-    $max_mb = absint($_POST['max_mb'] ?? 50);
-    $max_mb = max(10, min(500, $max_mb));
-
-    $zip_paths = sb_create_export_zips($manifest, $posts, $max_mb);
+    $zip_paths = sb_create_export_zips($manifest, $posts, $max_mb, false);
 
     if (is_wp_error($zip_paths)) {
         wp_send_json_error(['message' => $zip_paths->get_error_message()]);

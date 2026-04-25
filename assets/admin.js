@@ -120,38 +120,78 @@ document.addEventListener('DOMContentLoaded', function () {
     if (exportForm) {
         exportForm.addEventListener('submit', function (e) {
             e.preventDefault();
-            exportResult.innerHTML = '<p>Export läuft…</p>';
 
-            const data = new FormData();
-            data.append('action', 'sb_export');
-            data.append('nonce', siteBackup.nonce);
-            data.append('max_mb', siteBackup.splitMaxMb || 50);
-            postGroups.querySelectorAll('input[name="post_ids[]"]:checked').forEach(function (cb) {
-                data.append('post_ids[]', cb.value);
-            });
+            var postsPerZip = 10;
+            var postsPerZipInput = document.getElementById('sb-posts-per-zip');
+            if (postsPerZipInput && postsPerZipInput.value) {
+                postsPerZip = parseInt(postsPerZipInput.value, 10) || 10;
+                if (postsPerZip < 1) postsPerZip = 1;
+                if (postsPerZip > 50) postsPerZip = 50;
+            }
 
-            fetch(siteBackup.ajaxUrl, { method: 'POST', body: data })
-                .then(r => r.json())
-                .then(function (res) {
-                    if (!res.success) {
-                        exportResult.innerHTML = '<p class="sb-error">Fehler: ' + (res.data?.message || 'Unbekannter Fehler') + '</p>';
-                        return;
-                    }
-                    const urls = res.data.urls || [];
-                    if (urls.length === 1) {
-                        exportResult.innerHTML = '<p class="sb-success">Export erfolgreich! '
-                            + '<a href="' + urls[0] + '" download>Export herunterladen</a></p>';
-                    } else {
-                        const links = urls.map(function (url, i) {
-                            return '<a href="' + url + '" download>Teil ' + (i + 1) + ' herunterladen</a>';
-                        }).join(' &nbsp; ');
-                        exportResult.innerHTML = '<p class="sb-success">Export erfolgreich! (' + urls.length + ' Teile)</p>'
-                            + '<p>' + links + '</p>';
-                    }
-                })
-                .catch(function () {
-                    exportResult.innerHTML = '<p class="sb-error">Netzwerkfehler beim Export.</p>';
-                });
+            var selectedPosts = postGroups.querySelectorAll('input[name="post_ids[]"]:checked');
+            if (!selectedPosts.length) {
+                exportResult.innerHTML = '<p class="sb-error">Bitte Posts auswählen.</p>';
+                return;
+            }
+
+            var postIds = [].slice.call(selectedPosts).map(function(cb) { return parseInt(cb.value, 10); }).filter(function(id) { return id > 0; });
+            if (!postIds.length) {
+                exportResult.innerHTML = '<p class="sb-error">Bitte Posts auswählen.</p>';
+                return;
+            }
+            var chunks = [];
+            for (var i = 0; i < postIds.length; i += postsPerZip) {
+                chunks.push(postIds.slice(i, i + postsPerZip));
+            }
+
+            var allUrls = [];
+            var totalCount = 0;
+            var currentPart = 0;
+            var totalParts = chunks.length;
+
+            exportResult.innerHTML = '<p>Exportiere... <span id="sb-export-progress">0/' + totalParts + '</span></p><div style="width:100%;background:#eee;height:20px;margin:10px 0;"><div id="sb-export-bar" style="width:0%;background:#2271b1;height:100%;transition:width 0.3s;"></div></div>';
+
+            var exportBar = document.getElementById('sb-export-bar');
+            var exportProgress = document.getElementById('sb-export-progress');
+
+            function exportNextPart() {
+                if (currentPart >= totalParts) {
+                    exportResult.innerHTML = '<p class="sb-success">' + totalCount + ' Posts in ' + totalParts + ' ZIPs exportiert:</p><p>' +
+                        allUrls.map(function(url, i) { return '<a href="' + url + '" download>ZIP ' + (i+1) + '</a>'; }).join(' &nbsp; ') + '</p>';
+                    return;
+                }
+
+                var data = new FormData();
+                data.append('action', 'sb_export_part');
+                data.append('nonce', siteBackup.nonce);
+                data.append('max_mb', siteBackup.splitMaxMb || 50);
+                data.append('posts_per_zip', postsPerZip);
+                chunks[currentPart].forEach(function(id) { data.append('post_ids[]', id); });
+
+                fetch(siteBackup.ajaxUrl, { method: 'POST', body: data })
+                    .then(function(r) { return r.json(); })
+                    .then(function(res) {
+                        if (!res.success) {
+                            exportResult.innerHTML = '<p class="sb-error">Fehler bei Part ' + (currentPart+1) + ': ' + (res.data && res.data.message || 'Error') + '</p>';
+                            return;
+                        }
+                        allUrls = allUrls.concat(res.data.urls || []);
+                        totalCount += res.data.count || 0;
+                        currentPart++;
+
+                        var pct = Math.round((currentPart / totalParts) * 100);
+                        exportBar.style.width = pct + '%';
+                        exportProgress.textContent = currentPart + '/' + totalParts;
+
+                        exportNextPart();
+                    })
+                    .catch(function(err) {
+                        exportResult.innerHTML = '<p class="sb-error">Netzwerkfehler bei Part ' + (currentPart+1) + '</p>';
+                    });
+            }
+
+            exportNextPart();
         });
     }
 
@@ -251,57 +291,172 @@ document.addEventListener('DOMContentLoaded', function () {
             var zipFile = importForm.querySelector('input[name="sb_zip"]');
             var serverFile = importForm.querySelector('input[name="sb_zip_file"]');
 
-            if ((!zipFile || !zipFile.files.length) && (!serverFile || !serverFile.value)) {
-                result.innerHTML = '<p class="sb-error">Bitte ZIP-Datei auswählen.</p>';
+            var fileList = [];
+            var serverFiles = [];
+
+            if (serverFile && serverFile.value) {
+                serverFiles = serverFile.value.split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
+            }
+
+            if (zipFile && zipFile.files && zipFile.files.length) {
+                for (var i = 0; i < zipFile.files.length; i++) {
+                    fileList.push({ name: zipFile.files[i].name, file: zipFile.files[i], source: 'upload' });
+                }
+            }
+
+            serverFiles.forEach(function(name) {
+                fileList.push({ name: name, source: 'server' });
+            });
+
+            if (!fileList.length) {
+                result.innerHTML = '<p class="sb-error">Bitte mindestens eine ZIP-Datei auswählen.</p>';
                 return;
             }
 
-            if (serverFile && serverFile.value) {
-                result.innerHTML = '<p>Importiere vom Server…</p>';
-                var data = new FormData(importForm);
-                data.append('action', 'sb_import');
-                data.append('nonce', siteBackup.importNonce);
-                data.set('sb_zip_file', serverFile.value);
-                data.delete('sb_zip');
+            var currentFile = 0;
+            var totalFiles = fileList.length;
+            var allResults = { created: [], updated: [], skipped: [], skipped_mapped: [], skipped_no_cpt: [], errors: [] };
 
-                fetch(siteBackup.ajaxUrl, { method: 'POST', body: data })
-                    .then(function (r) { return r.json(); })
-                    .then(function (res) {
-                        if (!res.success) {
-                            result.innerHTML = '<p class="sb-error">Fehler: ' + (res.data && res.data.message || 'Unbekannter Fehler') + '</p>';
-                            return;
-                        }
-                        showImportResult(result, res.data);
-                    })
-                    .catch(function () {
-                        result.innerHTML = '<p class="sb-error">Netzwerkfehler.</p>';
-                    });
-            } else {
-                var file = zipFile.files[0];
-                if (file.size > CHUNK_SIZE) {
-                    doChunkedUpload(file, function (postTypes) {
-                        showCptMapping(postTypes);
-                    });
-                } else {
-                    result.innerHTML = '<p>Import läuft…</p>';
+            result.innerHTML = '<p>Importiere... <span id="sb-import-progress">0/' + totalFiles + '</span></p>' +
+                '<div style="width:100%;background:#eee;height:20px;margin:10px 0;">' +
+                '<div id="sb-import-bar" style="width:0%;background:#2271b1;height:100%;transition:width 0.3s;"></div></div>' +
+                '<div id="sb-import-log" style="font-size:0.9em;color:#666;"></div>';
+
+            var importBar = document.getElementById('sb-import-bar');
+            var importProgress = document.getElementById('sb-import-progress');
+            var importLog = document.getElementById('sb-import-log');
+
+            function processNextFile() {
+                if (currentFile >= totalFiles) {
+                    var summary = '<p class="sb-success"><strong>Insgesamt: Erstellt: ' + allResults.created.length +
+                        ' | Aktualisiert: ' + allResults.updated.length +
+                        ' | Übersprungen: ' + allResults.skipped.length + '</strong></p>';
+                    var makeList = function (label, items) {
+                        return items.length
+                            ? '<details><summary>' + label + ' (' + items.length + ')</summary><ul>' + items.map(function (t) { return '<li>' + t + '</li>'; }).join('') + '</ul></details>'
+                            : '';
+                    };
+                    result.innerHTML = summary
+                        + makeList('Erstellt', allResults.created)
+                        + makeList('Aktualisiert', allResults.updated)
+                        + makeList('Übersprungen', allResults.skipped)
+                        + makeList('Übersprungen (Mapping)', allResults.skipped_mapped)
+                        + makeList('Übersprungen (CPT)', allResults.skipped_no_cpt)
+                        + (allResults.errors.length ? makeList('Fehler', allResults.errors) : '');
+                    return;
+                }
+
+                var f = fileList[currentFile];
+                importLog.textContent = 'Verarbeite: ' + f.name;
+
+                if (f.source === 'server') {
                     var data = new FormData(importForm);
                     data.append('action', 'sb_import');
                     data.append('nonce', siteBackup.importNonce);
+                    data.set('sb_zip_file', f.name);
+                    data.delete('sb_zip');
 
                     fetch(siteBackup.ajaxUrl, { method: 'POST', body: data })
                         .then(function (r) { return r.json(); })
                         .then(function (res) {
                             if (!res.success) {
-                                result.innerHTML = '<p class="sb-error">Fehler: ' + (res.data && res.data.message || 'Unbekannter Fehler') + '</p>';
-                                return;
+                                allResults.errors.push(f.name + ': ' + (res.data && res.data.message || 'Error'));
+                            } else {
+                                allResults.created = allResults.created.concat(res.data.created || []);
+                                allResults.updated = allResults.updated.concat(res.data.updated || []);
+                                allResults.skipped = allResults.skipped.concat(res.data.skipped || []);
+                                allResults.skipped_mapped = allResults.skipped_mapped.concat(res.data.skipped_mapped || []);
+                                allResults.skipped_no_cpt = allResults.skipped_no_cpt.concat(res.data.skipped_no_cpt || []);
+                                if (res.data.errors && res.data.errors.length) {
+                                    allResults.errors = allResults.errors.concat(res.data.errors);
+                                }
                             }
-                            showImportResult(result, res.data);
+                            finishFile();
                         })
                         .catch(function () {
-                            result.innerHTML = '<p class="sb-error">Netzwerkfehler.</p>';
+                            allResults.errors.push(f.name + ': Netzwerkfehler');
+                            finishFile();
                         });
+                } else {
+                    var file = f.file;
+                    if (file.size > CHUNK_SIZE) {
+                        doChunkedUpload(file, function (postTypes) {
+                            showCptMapping(postTypes, function() {
+                                var data = new FormData();
+                                data.append('action', 'sb_import');
+                                data.append('nonce', siteBackup.importNonce);
+                                data.append('sb_zip_file', file.name);
+                                data.append('collision', importForm.querySelector('#sb-collision').value);
+                                var cptMappingDiv = document.getElementById('sb-cpt-mapping');
+                                if (cptMappingDiv && cptMappingDiv.style.display !== 'none') {
+                                    var selects = cptMappingDiv.querySelectorAll('select');
+                                    selects.forEach(function(sel) {
+                                        data.append('cpt_map[' + sel.dataset.srcType + ']', sel.value);
+                                    });
+                                }
+
+                                fetch(siteBackup.ajaxUrl, { method: 'POST', body: data })
+                                    .then(function (r) { return r.json(); })
+                                    .then(function (res) {
+                                        if (!res.success) {
+                                            allResults.errors.push(f.name + ': ' + (res.data && res.data.message || 'Error'));
+                                        } else {
+                                            allResults.created = allResults.created.concat(res.data.created || []);
+                                            allResults.updated = allResults.updated.concat(res.data.updated || []);
+                                            allResults.skipped = allResults.skipped.concat(res.data.skipped || []);
+                                            allResults.skipped_mapped = allResults.skipped_mapped.concat(res.data.skipped_mapped || []);
+                                            allResults.skipped_no_cpt = allResults.skipped_no_cpt.concat(res.data.skipped_no_cpt || []);
+                                            if (res.data.errors && res.data.errors.length) {
+                                                allResults.errors = allResults.errors.concat(res.data.errors);
+                                            }
+                                        }
+                                        finishFile();
+                                    })
+                                    .catch(function () {
+                                        allResults.errors.push(f.name + ': Netzwerkfehler');
+                                        finishFile();
+                                    });
+                            });
+                        });
+                    } else {
+                        var data = new FormData(importForm);
+                        data.append('action', 'sb_import');
+                        data.append('nonce', siteBackup.importNonce);
+
+                        fetch(siteBackup.ajaxUrl, { method: 'POST', body: data })
+                            .then(function (r) { return r.json(); })
+                            .then(function (res) {
+                                if (!res.success) {
+                                    allResults.errors.push(f.name + ': ' + (res.data && res.data.message || 'Error'));
+                                } else {
+                                    allResults.created = allResults.created.concat(res.data.created || []);
+                                    allResults.updated = allResults.updated.concat(res.data.updated || []);
+                                    allResults.skipped = allResults.skipped.concat(res.data.skipped || []);
+                                    allResults.skipped_mapped = allResults.skipped_mapped.concat(res.data.skipped_mapped || []);
+                                    allResults.skipped_no_cpt = allResults.skipped_no_cpt.concat(res.data.skipped_no_cpt || []);
+                                    if (res.data.errors && res.data.errors.length) {
+                                        allResults.errors = allResults.errors.concat(res.data.errors);
+                                    }
+                                }
+                                finishFile();
+                            })
+                            .catch(function () {
+                                allResults.errors.push(f.name + ': Netzwerkfehler');
+                                finishFile();
+                            });
+                    }
                 }
             }
+
+            function finishFile() {
+                currentFile++;
+                var pct = Math.round((currentFile / totalFiles) * 100);
+                importBar.style.width = pct + '%';
+                importProgress.textContent = currentFile + '/' + totalFiles;
+                processNextFile();
+            }
+
+            processNextFile();
         });
     }
 
@@ -321,10 +476,13 @@ document.addEventListener('DOMContentLoaded', function () {
             + (d.errors && d.errors.length ? makeList('Fehler', d.errors) : '');
     }
 
-    function showCptMapping(postTypes) {
+    function showCptMapping(postTypes, onConfirm) {
         var cptMappingDiv = document.getElementById('sb-cpt-mapping');
         var cptMapTable = document.getElementById('sb-cpt-map-table');
-        if (!cptMappingDiv || !cptMapTable || !postTypes || !postTypes.length) return;
+        if (!cptMappingDiv || !cptMapTable) {
+            if (onConfirm) onConfirm();
+            return;
+        }
 
         var available = (siteBackup.availableCpts || []);
         var availableNames = available.map(function (c) { return c.name; });
@@ -336,12 +494,35 @@ document.addEventListener('DOMContentLoaded', function () {
             }).join('');
             return '<tr' + (!exists ? ' class="sb-cpt-missing"' : '') + '>'
                 + '<td><code>' + srcType + '</code>' + (!exists ? ' <span style="color:#d63638;">⚇ nicht gefunden</span>' : '') + '</td>'
-                + '<td><select name="cpt_map[' + srcType + ']" class="' + (!exists ? 'sb-cpt-missing' : '') + '">' + options + '<option value="skip">— Überspringen —</option></select></td>'
+                + '<td><select name="cpt_map[' + srcType + ']" data-src-type="' + srcType + '" class="' + (!exists ? 'sb-cpt-missing' : '') + '">' + options + '<option value="skip">— Überspringen —</option></select></td>'
                 + '</tr>';
         }).join('');
 
         cptMapTable.querySelector('tbody').innerHTML = rows;
+
+        if (!postTypes || !postTypes.length) {
+            if (onConfirm) onConfirm();
+            return;
+        }
+
         cptMappingDiv.style.display = 'block';
+        cptMappingDiv.dataset.waitingConfirm = '1';
+        cptMappingDiv.dataset.onConfirm = onConfirm ? '1' : '0';
+
+        var existingBtn = cptMappingDiv.querySelector('.button-primary');
+        if (existingBtn) existingBtn.remove();
+
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'button button-primary';
+        btn.style.marginTop = '10px';
+        btn.textContent = 'Import fortsetzen';
+        btn.onclick = function() {
+            cptMappingDiv.style.display = 'none';
+            cptMappingDiv.dataset.waitingConfirm = '0';
+            if (onConfirm) onConfirm();
+        };
+        cptMappingDiv.appendChild(btn);
     }
 
     // ── CPT-MAPPING (Import) ──────────────────────────────────────────────────────

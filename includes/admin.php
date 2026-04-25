@@ -32,15 +32,15 @@ function sb_enqueue_admin_assets($hook) {
         'peekNonce'    => wp_create_nonce('sb_peek_manifest'),
         'splitMaxMb'   => 50,
         'availableCpts' => array_values(array_map(
-            fn($pt) => ['name' => $pt->name, 'label' => $pt->label],
+            function($pt) { return array('name' => $pt->name, 'label' => $pt->label); },
             array_filter(
-                get_post_types(['show_ui' => true], 'objects'),
-                fn($pt) => !in_array($pt->name, [
+                get_post_types(array('show_ui' => true), 'objects'),
+                function($pt) { return !in_array($pt->name, array(
                     'attachment', 'revision', 'nav_menu_item', 'custom_css',
                     'customize_changeset', 'oembed_cache', 'user_request',
                     'wp_block', 'wp_template', 'wp_template_part',
                     'wp_global_styles', 'wp_navigation',
-                ], true)
+                ), true); }
             )
         )),
     ]);
@@ -68,6 +68,11 @@ function sb_render_admin_page() {
                     <span id="sb-loading-posts" style="display:none;">Lade Posts…</span>
                 </div>
                 <div id="sb-post-groups"></div>
+                <p style="margin: 12px 0;">
+                    <label for="sb-posts-per-zip">Posts pro ZIP:</label>
+                    <input type="number" id="sb-posts-per-zip" name="posts_per_zip" value="10" min="1" max="50" style="width:60px;">
+                    <span style="color:#666;font-size:0.9em;">(1-50)</span>
+                </p>
                 <p class="submit">
                     <button type="submit" id="sb-export-btn" class="button button-primary" disabled>Exportieren</button>
                 </p>
@@ -89,14 +94,17 @@ function sb_render_admin_page() {
                         </td>
                     </tr>
                     <tr>
-                        <th><label for="sb-zip">Export-ZIP</label></th>
-                        <td><input type="file" name="sb_zip" id="sb-zip" accept=".zip"></td>
+                        <th><label for="sb-zip">Export-ZIP(s)</label></th>
+                        <td>
+                            <input type="file" name="sb_zip" id="sb-zip" accept=".zip" multiple>
+                            <p class="description">Mehrere Dateien mit Strg/Cmd+Click auswählen.</p>
+                        </td>
                     </tr>
                     <tr>
-                        <th><label for="sb-zip-file">Oder vom Server</label></th>
+                        <th><label for="sb-zip-file">Oder vom Server (kommagetrennt)</label></th>
                         <td>
-                            <input type="text" name="sb_zip_file" id="sb-zip-file" placeholder="dateiname.zip" style="width:250px;">
-                            <p class="description">ZIP via FTP nach <code>wp-content/uploads/sb-exports/</code> hochladen und hier eingeben.</p>
+                            <input type="text" name="sb_zip_file" id="sb-zip-file" placeholder="datei1.zip, datei2.zip" style="width:350px;">
+                            <p class="description">Nur falls ZIPs bereits per FTP hochgeladen wurden.</p>
                         </td>
                     </tr>
                 </table>

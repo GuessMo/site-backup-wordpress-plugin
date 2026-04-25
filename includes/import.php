@@ -69,8 +69,8 @@ function sb_import_single_post(array $post_data, string $target_type, string $co
         'post_title'   => $post_data['post_title'],
         'post_content' => $post_data['post_content'],
         'post_excerpt' => $post_data['post_excerpt'],
-        'post_status'  => $post_data['post_status'] ?? 'draft',
-        'post_date'    => $post_data['post_date'] ?? current_time('mysql'),
+        'post_status'  => isset($post_data['post_status']) ? $post_data['post_status'] : 'draft',
+        'post_date'    => isset($post_data['post_date']) ? $post_data['post_date'] : current_time('mysql'),
         'post_name'    => $post_data['post_name'],
         'post_type'    => $target_type,
     ];
@@ -166,7 +166,7 @@ function sb_replace_domain_in_value(mixed $value, string $old, string $new): mix
     return str_replace($old, $new, $value);
 }
 
-function sb_replace_domain_in_post(array &$post_data, string $old_domain, string $new_domain): void {
+function sb_replace_domain_in_post(array &$post_data, string $old_domain, string $new_domain) {
     if (empty($old_domain) || $old_domain === $new_domain) {
         return;
     }
@@ -219,7 +219,8 @@ function sb_get_uploaded_zip_file(string $field): array|WP_Error {
         return new WP_Error('upload_failed', sb_get_upload_error_message($upload_error));
     }
 
-    $tmp_name = (string) ($file['tmp_name'] ?? '');
+    $tmp_name_val = isset($file['tmp_name']) ? $file['tmp_name'] : '';
+    $tmp_name = (string) $tmp_name_val;
     if ($tmp_name === '' || !file_exists($tmp_name)) {
         return new WP_Error('upload_tmp_missing', 'Upload unvollständig: Temporäre Datei nicht gefunden.');
     }
@@ -341,13 +342,13 @@ function sb_chunk_upload_merge(string $filename, int $total_chunks): array|WP_Er
 }
 
 add_action('wp_ajax_sb_peek_manifest', 'sb_ajax_peek_manifest');
-function sb_ajax_peek_manifest(): void {
+function sb_ajax_peek_manifest() {
     check_ajax_referer('sb_peek_manifest', 'nonce');
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => 'Nicht autorisiert.'], 403);
     }
 
-    $server_filename = $_POST['sb_zip_file'] ?? '';
+    $server_filename = isset($_POST['sb_zip_file']) ? $_POST['sb_zip_file'] : '';
     if (!empty($server_filename)) {
         $file = sb_get_server_zip_file($server_filename);
     } else {
@@ -379,7 +380,7 @@ function sb_ajax_peek_manifest(): void {
     }
 
     // post_types aus manifest (neues Feld) oder aus Posts ableiten
-    $post_types = $manifest['post_types'] ?? [];
+    $post_types = isset($manifest['post_types']) ? $manifest['post_types'] : array();
     if (empty($post_types) && !empty($manifest['posts'])) {
         $post_types = array_values(array_unique(array_column($manifest['posts'], 'post_type')));
     }
@@ -388,14 +389,14 @@ function sb_ajax_peek_manifest(): void {
 }
 
 add_action('wp_ajax_sb_chunk_init', 'sb_ajax_chunk_init');
-function sb_ajax_chunk_init(): void {
+function sb_ajax_chunk_init() {
     check_ajax_referer('sb_import', 'nonce');
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => 'Nicht autorisiert.'], 403);
     }
 
-    $filename    = sanitize_file_name($_POST['filename'] ?? '');
-    $totalChunks = absint($_POST['total_chunks'] ?? 0);
+    $filename    = isset($_POST['filename']) ? sanitize_file_name($_POST['filename']) : '';
+    $totalChunks = isset($_POST['total_chunks']) ? absint($_POST['total_chunks']) : 0;
 
     if (empty($filename) || !$totalChunks) {
         wp_send_json_error(['message' => 'Filename und total_chunks erforderlich.']);
@@ -417,15 +418,15 @@ function sb_ajax_chunk_init(): void {
 }
 
 add_action('wp_ajax_sb_chunk_append', 'sb_ajax_chunk_append');
-function sb_ajax_chunk_append(): void {
+function sb_ajax_chunk_append() {
     check_ajax_referer('sb_import', 'nonce');
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => 'Nicht autorisiert.'], 403);
     }
 
-    $filename    = sanitize_file_name($_POST['filename'] ?? '');
-    $chunkIndex = absint($_POST['chunk_index'] ?? -1);
-    $chunkData  = $_POST['chunk_data'] ?? '';
+    $filename    = isset($_POST['filename']) ? sanitize_file_name($_POST['filename']) : '';
+    $chunkIndex = isset($_POST['chunk_index']) ? absint($_POST['chunk_index']) : -1;
+    $chunkData  = isset($_POST['chunk_data']) ? $_POST['chunk_data'] : '';
 
     if (empty($filename) || $chunkIndex < 0 || empty($chunkData)) {
         wp_send_json_error(['message' => 'filename, chunk_index und chunk_data erforderlich.']);
@@ -440,14 +441,14 @@ function sb_ajax_chunk_append(): void {
 }
 
 add_action('wp_ajax_sb_chunk_merge', 'sb_ajax_chunk_merge');
-function sb_ajax_chunk_merge(): void {
+function sb_ajax_chunk_merge() {
     check_ajax_referer('sb_import', 'nonce');
     if (!current_user_can('manage_options')) {
         wp_send_json_error(['message' => 'Nicht autorisiert.'], 403);
     }
 
-    $filename    = sanitize_file_name($_POST['filename'] ?? '');
-    $totalChunks = absint($_POST['total_chunks'] ?? 0);
+    $filename    = isset($_POST['filename']) ? sanitize_file_name($_POST['filename']) : '';
+    $totalChunks = isset($_POST['total_chunks']) ? absint($_POST['total_chunks']) : 0;
 
     if (empty($filename) || !$totalChunks) {
         wp_send_json_error(['message' => 'filename und total_chunks erforderlich.']);
@@ -470,13 +471,15 @@ function sb_ajax_chunk_merge(): void {
         wp_send_json_error(['message' => $manifest->get_error_message()]);
     }
 
-    $post_types = $manifest['post_types'] ?? [];
+    $post_types = isset($manifest['post_types']) ? $manifest['post_types'] : array();
     if (empty($post_types) && !empty($manifest['posts'])) {
         $post_types = array_values(array_unique(array_column($manifest['posts'], 'post_type')));
     }
 
-    wp_send_json_success(['post_types' => $post_types]);
+    wp_send_json_success(array('post_types' => $post_types));
 }
+
+add_action('wp_ajax_sb_import', 'sb_ajax_import');
 
 add_action('wp_ajax_sb_import', 'sb_ajax_import');
 function sb_ajax_import() {
@@ -485,7 +488,7 @@ function sb_ajax_import() {
         wp_send_json_error(['message' => 'Nicht autorisiert.'], 403);
     }
 
-    $server_filename = $_POST['sb_zip_file'] ?? '';
+    $server_filename = isset($_POST['sb_zip_file']) ? $_POST['sb_zip_file'] : '';
     if (!empty($server_filename)) {
         $file = sb_get_server_zip_file($server_filename);
     } else {
@@ -520,13 +523,14 @@ function sb_ajax_import() {
         $site   = site_url();
         $parsed = parse_url($site);
         $new_domain = (!empty($parsed['scheme']) ? $parsed['scheme'] : 'https')
-                    . '://' . ($parsed['host'] ?? '');
+                    . '://' . (isset($parsed['host']) ? $parsed['host'] : '');
     }
 
-    $source_type = sanitize_key($_POST['source_type'] ?? '');
-    $target_type = sanitize_key($_POST['target_type'] ?? $source_type);
-    $collision   = in_array($_POST['collision'] ?? '', ['skip', 'override'], true)
-                   ? $_POST['collision'] : 'skip';
+    $source_type = isset($_POST['source_type']) ? sanitize_key($_POST['source_type']) : '';
+    $target_type = isset($_POST['target_type']) ? sanitize_key($_POST['target_type']) : $source_type;
+    $collision_post = isset($_POST['collision']) ? $_POST['collision'] : '';
+    $collision   = in_array($collision_post, ['skip', 'override'], true)
+                   ? $collision_post : 'skip';
     $media_dir   = trailingslashit($extract_dir);
 
     $cpt_map = [];
@@ -536,14 +540,14 @@ function sb_ajax_import() {
         }
     }
 
-    $created = $updated = $skipped = $skipped_mapped = $skipped_no_cpt = $errors = [];
+    $created = $updated = $skipped = $skipped_mapped = $skipped_no_cpt = $errors = array();
 
     foreach ($manifest['posts'] as $post_data) {
-        $src_type    = $post_data['post_type'] ?? $target_type;
-        $mapped_type = $cpt_map[$src_type] ?? $src_type;
+        $src_type    = isset($post_data['post_type']) ? $post_data['post_type'] : $target_type;
+        $mapped_type = isset($cpt_map[$src_type]) ? $cpt_map[$src_type] : $src_type;
 
         if ($mapped_type === 'skip') {
-            $skipped_mapped[] = $post_data['post_title'] ?? '?';
+            $skipped_mapped[] = isset($post_data['post_title']) ? $post_data['post_title'] : '?';
             continue;
         }
 
@@ -552,8 +556,8 @@ function sb_ajax_import() {
             case 'created':        $created[]        = $result['title']; break;
             case 'updated':        $updated[]        = $result['title']; break;
             case 'skipped':        $skipped[]        = $result['title']; break;
-            case 'skipped_no_cpt': $skipped_no_cpt[] = ($result['title'] ?? '?') . ' (' . ($result['cpt'] ?? '') . ')'; break;
-            case 'error':          $errors[]         = ($result['title'] ?? '?') . ': ' . ($result['error'] ?? ''); break;
+            case 'skipped_no_cpt': $skipped_no_cpt[] = (isset($result['title']) ? $result['title'] : '?') . ' (' . (isset($result['cpt']) ? $result['cpt'] : '') . ')'; break;
+            case 'error':          $errors[]         = (isset($result['title']) ? $result['title'] : '?') . ': ' . (isset($result['error']) ? $result['error'] : ''); break;
         }
     }
 
