@@ -16,7 +16,7 @@ define( 'POST_MIGRATOR_VERSION', '0.9.1' );
 define( 'POST_MIGRATOR_DIR', plugin_dir_path( __FILE__ ) );
 define( 'POST_MIGRATOR_URL', plugin_dir_url( __FILE__ ) );
 
-// PHP 5.6 / 7.x Polyfills (ab PHP 8.0 bereits eingebaut)
+// PHP 5.6 / 7.x Polyfills
 if ( ! function_exists( 'str_starts_with' ) ) {
     function str_starts_with( $haystack, $needle ) {
         return strncmp( $haystack, $needle, strlen( $needle ) ) === 0;
